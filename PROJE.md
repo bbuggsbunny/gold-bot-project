@@ -1,8 +1,8 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 26 Temmuz 2026 (rev 8 — haftalık testnet koşusuna hazırlık)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 9 — haber katmanı canlandırıldı; testnet hesabı BLOKE)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
-> **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
+> **Durum:** ⛔ Testnet hesabı işlem yapamaz durumda (bkz. Bölüm 12, Blokaj) — kod tarafı koşuya hazır
 
 ---
 
@@ -151,8 +151,10 @@ UZUN VADELİ DÖNGÜ (uzun_vadeli_dongu, 4 saatte bir):
 │   ├── kararlar.csv            #   Her analiz döngüsü bir satır
 │   └── gunluk_durum.json       #   Gün sonu bakiyesi (K/Z hesabı için)
 │
-├── testler/                    # ★ Otomatik test
-│   └── duman_testi.py          #   Ağsız/ücretsiz uçtan uca doğrulama (47 kontrol)
+├── testler/                    # ★ Test ve teşhis
+│   ├── duman_testi.py          #   Ağsız/ücretsiz uçtan uca doğrulama (53 kontrol)
+│   ├── canli_kontrol.py        #   Gerçek API'lerle ön kontrol, emir göndermez
+│   └── rapor.py                #   Karar kaydı raporu
 │
 ├── agents/
 │   ├── __init__.py
@@ -1217,11 +1219,18 @@ get_server_time()         — zaman senkronu (utils.py)
 
 ### RSS Kaynakları
 
+> **2026-07-26:** Önceki üç kaynağın **üçü de ölüydü** — Reuters feed'i DNS'te yok (servis kapatılmış), Kitco ve gold.org 404 veriyordu. Haber katmanı aylardır hiçbir şey üretmiyor, dolayısıyla FinBERT hiç çalışmıyordu. 11 aday ölçülüp aşağıdaki üçü seçildi.
+
 ```
-https://feeds.reuters.com/reuters/businessNews   — Reuters iş haberleri
-https://www.kitco.com/rss/                        — Kitco altın haberleri
-https://www.gold.org/goldhub/rss                  — World Gold Council
+https://news.google.com/rss/search?q=gold+(fed OR inflation OR dollar OR "interest rate")
+    -stock -shares -mining -karat -tola when:1d      — makro sürücüler (birincil)
+https://www.investing.com/rss/commodities.rss        — emtia, derlenmiş
+https://www.fxstreet.com/rss/news                    — döviz/emtia profesyonel akış
 ```
+
+Düz `"gold price"` sorgusu elendi: yerel kuyumcu fiyat listeleri (22K, tola), madencilik hisseleri ve alakasız sonuçlar döndürüyordu. `news_agent.GURULTU_KELIMELER` filtresi aynı türden başlıkları başlıkta yakalar.
+
+**Tarama periyodu:** 5 dakika (`bot/dongu.py: RSS_PERIYOT_DK`). Üç feed + FinBERT toplu çağrısı 10-20 saniye sürüyor; dakikalık tarama hem döngüyü yavaşlatıyor hem haftada ~30.000 istekle sağlayıcıları yoruyordu.
 
 ### investing.com
 
@@ -1277,6 +1286,18 @@ python3 backtest/motor.py
 # ATR breakout backtest
 python3 backtest/strateji_breakout.py
 ```
+
+### Karar kaydı raporu
+
+```bash
+python3 testler/rapor.py               # tüm günler + genel toplam
+python3 testler/rapor.py 2026-07-27    # tek gün, karar dökümü
+python3 testler/rapor.py --kararlar    # her gün için karar dökümü
+```
+
+`kayitlar/kararlar.csv`'yi okur; **botun çalışıyor olması gerekmez.** Gece 00:00'daki Telegram özeti yalnızca bot o an ayaktaysa tetiklendiği için, terminal kapatılarak çalıştırılan koşularda asıl özet kaynağı budur.
+
+Gösterdikleri: döngü ve aşama dağılımı, AL/SAT/BEKLE, ortalama güven, fiyat aralığı, gönderilen emirler (SL/TP/kaldıraç ile) ve **BEKLE sebeplerinin dağılımı** — botun neden işlem açmadığını tek bakışta verir.
 
 ### Canlı ön kontrol — gerçek API'ler, emir yok ★
 
@@ -1398,6 +1419,10 @@ git log --oneline
 | 2026-07-26 | Ajan hataları artık loglanıyor | `decision`/`technical`/`risk` ajanlarının `except` blokları hatayı yazmadan güvenli varsayılana dönüyordu (BEKLE / NOTR / ONAY:HAYIR) — bu yüzden kritik hata "bugün sinyal yok" gibi görünüyordu | Üç ajan da hata tipi + mesajı basıyor. `decision_agent`'taki tam prompt dökümü kaldırıldı. Commit `0f7e7a9` |
 | 2026-07-26 | `risk_agent` prompt'unda yanlış config değişkeni | `MAX GÜNLÜK ZARAR: ${MAX_STOP_LOSS_PCT}` yazıyordu → Claude'a limit "$1.0" gidiyordu ($75 yerine) | `MAX_GUNLUK_ZARAR` kullanılıyor, SL limiti ayrı satırda. Commit `18d98bc` |
 | 2026-07-26 | Katman kaldıracı gerçekten uygulanır oldu | `order_agent` her emirde `config.LEVERAGE=5` kullanıyordu; `KALDIRAC_KISA=10`/`KALDIRAC_UZUN=3` sadece risk ajanının prompt metnindeydi. Risk ajanı 10x'e göre değerlendirip emir 5x gidiyordu | `order_agent.calistir()` kaldıracı parametre alıyor; `LEVERAGE` sabiti kaldırıldı. **Davranış değişti:** kısa 10x, uzun 3x. Commit `7d500cf` |
+| 2026-07-26 | **Haber katmanı canlandırıldı ★ KRİTİK** | Üç RSS kaynağının üçü de ölüydü (Reuters DNS'te yok, diğerleri 404) — haber katmanı aylardır boş dönüyor, FinBERT hiç çalışmıyordu. 100+ kalıplık altın kalibrasyonu, ayrı Python 3.12 ortamı, 22 cümlelik test seti hepsi atıl duruyordu | 11 aday ölçüldü, üç çalışan kaynak seçildi. `GURULTU_KELIMELER` filtresi eklendi. Gerçek testte FinBERT çalıştı ve sentiment üretti. Commit `ea59937` |
+| 2026-07-26 | **FinBERT toplu çağrıya geçirildi ★ performans** | `rss_kontrol` her başlık için ayrı subprocess açıyordu; her çağrı modeli sıfırdan yüklüyor, başlık başına ~8 sn. Ölçüldü: 90 başlık tek tek = **~12 dakika**, 1 dakikalık döngüyü kilitlerdi. Feed'ler ölü olduğu için hiç göze çarpmamıştı | `toplu_analiz_et()` zaten yazılmıştı ama kullanılmıyordu. Aynı 90 başlık artık ~4 saniye. `MAX_YENI_HABER=15` tur başına sınır |
+| 2026-07-26 | **`testler/rapor.py`** | Kullanıcı terminali kapatınca botu da durduruyor; gece 00:00 Telegram özeti çoğu zaman tetiklenmeyecek | CSV'den istenen an rapor: döngü/aşama dağılımı, AL-SAT-BEKLE, ortalama güven, gönderilen emirler, **BEKLE sebeplerinin dağılımı** |
+| 2026-07-26 | **Koşu öncesi hesap kontrolü** | Emir yolu bugüne kadar hiç gerçek Binance'e gitmemişti | `order_agent.hesap_kontrol()` + `canli_kontrol.py` `[0/6]` bölümü. Emir parametreleri doğrulandı (QUANTITY/stepSize/MIN_NOTIONAL/kaldıraç — hepsi uygun) ama **hesabın kendisinin ölü olduğu ortaya çıktı**. Commit `ff745dd` |
 | 2026-07-26 | **Kalıcı karar kaydı (`bot/kayit.py`)** | Her şey stdout'a gidiyordu; bir haftalık koşunun sonunda elde analiz edilebilir veri kalmazdı | `kayitlar/kararlar.csv` — her döngü bir satır, `asama` sütunu döngünün nereye kadar gittiğini söyler. Sorun 6/7 kararı için gereken veri de bu |
 | 2026-07-26 | **Günlük özet bildirimi devreye alındı** | `bildir_ozet()` yazılmıştı ama hiç çağrılmıyordu | Gün devrinde Telegram'a özet: gerçek bakiye K/Z'si (`order_agent.bakiye_getir()`), döngü/karar/emir sayıları, ortalama güven |
 | 2026-07-26 | **`sudo chronyc` artık koşuyu kilitleyemez** | Şifresiz sudo kuralı yoksa sudo terminalden şifre ister, gözetimsiz bot orada takılırdı (Sorun 4) | `sudo -n` + 10s timeout; başarısızsa uyarı basıp devam. Kalıcı çözüm için sudoers kuralı `agents/utils.py` başlığında |
@@ -1415,6 +1440,34 @@ git log --oneline
 ---
 
 ## 12. AKTİF SORUNLAR
+
+### ⛔ BLOKAJ — Binance testnet hesabı işlem yapamıyor (2026-07-26)
+
+**Durum:** Kod tarafı koşuya hazır ama **bot emir gönderemez.**
+
+```
+canTrade            : False
+totalWalletBalance  : (boş)
+varlık / pozisyon   : 0 / 0
+futures_account_balance() → []
+```
+
+**Kök neden:** Binance Futures testnet hesapları periyodik olarak sıfırlanıyor. API anahtarı hâlâ **doğrulanıyor** — hata değil, boş yanıt geliyor — yani "anahtar yanlış" değil, "hesap silinmiş" durumu. Bu ayrım önemli: bağlantı testleri geçtiği için sorun uzun süre görünmeyebilir.
+
+**Etkisi:** Bot çalışır, sinyal üretir, kararlar `kayitlar/kararlar.csv`'ye yazılır — ama **her emir reddedilir.** Haftalık koşu bu haliyle işlem verisi üretmez.
+
+**Çözüm (kullanıcı tarafında, henüz YAPILMADI):**
+1. testnet.binancefuture.com adresine gir, giriş yap
+2. Yeni API anahtarı üret (hesap genelde 15.000 USDT test bakiyesiyle gelir)
+3. `.env` içindeki `BINANCE_API_KEY` ve `BINANCE_SECRET_KEY` satırlarını güncelle
+4. Doğrula: `python3 testler/canli_kontrol.py --habersiz` → `[0/6]` bölümü yeşil olmalı
+
+**Tekrarını önleme:** `canli_kontrol.py`'nin **ilk** bölümü artık bu kontrol. Koşu öncesi bakılan ilk şey hesabın işlem yapabilirliği.
+
+**Doğrulanmış olan:** Emir parametrelerinin kendisi Binance kurallarına uygun — `QUANTITY=0.01` ≥ minQty 0.001 ve stepSize katı, nominal 40,70 USDT ≥ MIN_NOTIONAL 5, kaldıraçlar 10x/3x ≤ maks 50x, fiyat hassasiyeti 2 ondalık = tickSize 0.01. Yani hesap düzelince emir yolunun çalışması bekleniyor.
+
+---
+
 
 ### ~~Sorun 1: FinBERT altın için ters etiketleyebiliyor~~ — **ÇÖZÜLDÜ** (2026-05-19)
 
@@ -1531,7 +1584,8 @@ sudo chmod 440 /etc/sudoers.d/chronyc
 | ~~1~~ | ~~FinBERT etiketi altın için kalibre et~~ | ~~Yanlış sentiment~~ | **TAMAMLANDI** — `_altin_yonu_duzelt()` eklendi | — |
 | ~~3~~ | ~~Günlük P&L kaydı / max günlük zarar takibi~~ | ~~Kârlılığı takip etmek~~ | **TAMAMLANDI** — main.py `_gunluk_zarar` sistemi | — |
 | ~~—~~ | ~~17 yıllık histdata backtesti~~ | ~~Uzun vadeli strateji doğrulaması~~ | **TAMAMLANDI** — `histdata_backtest.py`, CAGR %19,1 | — |
-| 1 | Canlı testnet döngüsü başlat | Teorik backtest yeterli değil, gerçek Binance davranışını görmek lazım | `python3 main.py` ile 1 hafta çalıştır | Düşük |
+| **0** | **⛔ Testnet API anahtarını yenile** | Hesap `canTrade:False` — bot emir gönderemez, koşu veri üretmez (Bölüm 12 Blokaj) | testnet.binancefuture.com → yeni anahtar → `.env` güncelle → `canli_kontrol.py` ile doğrula | Çok düşük |
+| 1 | Canlı testnet döngüsü başlat | Teorik backtest yeterli değil, gerçek Binance davranışını görmek lazım | **0. adım tamamlandıktan sonra** `python3 -u main.py` ile 1 hafta. Sonrasında `python3 testler/rapor.py` | Düşük |
 | 2 | Günlük P&L Telegram özeti | Kaç işlem, günlük K/Z gece raporu | `bildir_ozet()` çağrısını main.py'ya ekle (gece 00:00 sıfırlama sırasında) | Düşük |
 | 3 | Kaldıraç / position sizing iyileştirmesi | 17 yıllık backtest; yıllık max DD -%37–-%41'e kadar çıkıyor, hedef -%15 aşılıyor | `KALDIRAC_UZUN` 3x → 2x veya volatiliteye göre dinamik pozisyon boyutu | Orta |
 | 4 | Gerçek tarihsel haber API | 30g backtest haberlerinin gerçek olması | newsapi.org ücretsiz plan (100 req/gün) | Orta |
@@ -1622,6 +1676,17 @@ sudo chmod 440 /etc/sudoers.d/chronyc
 ---
 
 ## 16. MALİYET ANALİZİ
+
+> ⚠️ **Bu bölümdeki rakamlar 2026-07-26 itibarıyla GEÇERSİZ.** Aşağıdaki tahminler `claude-sonnet-4-6` + `max_tokens=150` + hiç çalışmayan bir FinBERT varsayımıyla yapılmıştı. O tarihten sonra değişenler:
+>
+> | Değişiklik | Maliyete etkisi |
+> |---|---|
+> | Model → `claude-sonnet-5` (thinking bloğu üretiyor) | ↑ düşünme token'ları çıktı olarak faturalanıyor |
+> | `max_tokens` 150→1000, 200→1500 | ↑ tavan yükseldi (fiili kullanım kadar ödenir) |
+> | RSS kaynakları çalışır hale geldi | ↓ haber analizi artık ücretsiz FinBERT'te, web arama yedeği nadiren tetikleniyor |
+> | RSS periyodu 1 dk → 5 dk | ↓ daha az işlem |
+>
+> Net etki tahmin edilmedi — **koşu sırasında ölçülmeli.** Anthropic konsolundaki kullanım ekranı ile `testler/rapor.py`'nin "Tahmini Claude çağrısı" satırı birlikte bakılırsa gerçek çağrı başı maliyet çıkar.
 
 ### Günlük tahmini API maliyeti
 
