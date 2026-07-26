@@ -276,6 +276,22 @@ def test_baglam_ajanlari():
     haber = news_agent.calistir()
     sozlesme_kontrol("news_agent.calistir", haber)
     kontrol("haber durum=ok", haber.basarili, haber.mesaj)
+
+    # yfinance NaN döndürünse skor NaN olur ve _yorumla() eskiden
+    # GUCLU_BEARISH veriyordu — veri eksikliği satış sinyaline dönüşüyordu.
+    saglam = macro_agent._veri_cek
+    macro_agent._veri_cek = lambda s: (float("nan"), float("nan")) \
+        if s == "^GSPC" else saglam(s)
+    bozuk = macro_agent.calistir()
+    macro_agent._veri_cek = saglam
+
+    kontrol("NaN sembol GUCLU_BEARISH'e dönüşmüyor",
+            bozuk.yorum != "GUCLU_BEARISH" and not math.isnan(bozuk.skor),
+            f"skor={bozuk.skor} yorum={bozuk.yorum}")
+    kontrol("eksik sembol raporlanıyor",
+            "sp500" in bozuk.detay.get("eksik", []),
+            f"detay={bozuk.detay}")
+
     return makro, takvim, haber
 
 

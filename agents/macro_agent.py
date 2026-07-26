@@ -1,3 +1,5 @@
+import math
+
 import yfinance as yf
 from tipler import MakroRaporu
 
@@ -11,11 +13,24 @@ SEMBOLLER = {
 
 
 def _veri_cek(sembol: str) -> tuple:
-    """Son iki kapanış fiyatını döndürür: (guncel, onceki)"""
+    """
+    Son iki kapanış fiyatını döndürür: (guncel, onceki)
+
+    NaN kontrolü kritik: yfinance zaman zaman NaN kapanış döndürüyor.
+    NaN sessizce skora karışırsa toplam skor da NaN olur ve _yorumla()
+    tüm karşılaştırmalardan düşüp "GUCLU_BEARISH" verir — yani veri
+    eksikliği güçlü satış sinyaline dönüşür. (2026-07-26'da canlı
+    kontrolde ^GSPC ile yaşandı.)
+    """
     df = yf.Ticker(sembol).history(period="5d")
     if len(df) < 2:
         raise ValueError(f"{sembol} için yeterli veri yok")
-    return float(df["Close"].iloc[-1]), float(df["Close"].iloc[-2])
+
+    guncel  = float(df["Close"].iloc[-1])
+    onceki  = float(df["Close"].iloc[-2])
+    if math.isnan(guncel) or math.isnan(onceki) or onceki == 0:
+        raise ValueError(f"{sembol} için geçersiz kapanış (NaN veya sıfır)")
+    return guncel, onceki
 
 
 def _degisim(guncel: float, onceki: float) -> float:
@@ -51,6 +66,10 @@ def _sp500_skoru(degisim: float) -> float:
 
 
 def _yorumla(skor: float) -> str:
+    # NaN her karşılaştırmadan False döner ve son else'e düşerdi →
+    # veri eksikliği "GUCLU_BEARISH" olurdu. Açıkça yakala.
+    if math.isnan(skor):
+        return "NOTR"
     if skor >= 15:
         return "GUCLU_BULLISH"
     elif skor >= 8:
@@ -68,21 +87,46 @@ def _yorumla(skor: float) -> str:
 
 
 def calistir() -> MakroRaporu:
+    SKORLAYICILAR = {
+        "dxy":   _dxy_skoru,
+        "vix":   _vix_skoru,
+        "tnx":   _tnx_skoru,
+        "sp500": _sp500_skoru,
+    }
+
     try:
-        dxy_gun,   dxy_onc   = _veri_cek(SEMBOLLER["dxy"])
-        vix_gun,   vix_onc   = _veri_cek(SEMBOLLER["vix"])
-        tnx_gun,   tnx_onc   = _veri_cek(SEMBOLLER["tnx"])
-        sp500_gun, sp500_onc = _veri_cek(SEMBOLLER["sp500"])
+        degisimler = {}
+        puanlar    = {}
+        eksik      = []
 
-        dxy_d   = _degisim(dxy_gun,   dxy_onc)
-        vix_d   = _degisim(vix_gun,   vix_onc)
-        tnx_d   = _degisim(tnx_gun,   tnx_onc)
-        sp500_d = _degisim(sp500_gun, sp500_onc)
+        # Bir sembol alınamazsa o bileşen 0 puan katkı verir ve raporlanır;
+        # diğer üçünün sinyali korunur. Sessizce NaN yayılmaz.
+        for ad, sembol in SEMBOLLER.items():
+            try:
+                guncel, onceki = _veri_cek(sembol)
+                d = _degisim(guncel, onceki)
+                # İkinci savunma hattı: NaN _veri_cek'ten sızmış olabilir
+                # (ör. test sahtesi ya da ileride değişen bir veri kaynağı).
+                if math.isnan(d):
+                    raise ValueError("değişim NaN")
+                puan = SKORLAYICILAR[ad](d)
+                if math.isnan(puan):
+                    raise ValueError("puan NaN")
+                degisimler[ad] = d
+                puanlar[ad]    = puan
+            except Exception as e:
+                print(f"  [MAKRO] ⚠️  {ad} ({sembol}) alınamadı: {e} → 0 puan")
+                degisimler[ad] = 0.0
+                puanlar[ad]    = 0.0
+                eksik.append(ad)
 
-        dxy_p   = _dxy_skoru(dxy_d)
-        vix_p   = _vix_skoru(vix_d)
-        tnx_p   = _tnx_skoru(tnx_d)
-        sp500_p = _sp500_skoru(sp500_d)
+        if len(eksik) == len(SEMBOLLER):
+            return MakroRaporu.hata("Hiçbir makro sembolü alınamadı")
+
+        dxy_d, vix_d, tnx_d, sp500_d = (degisimler["dxy"], degisimler["vix"],
+                                        degisimler["tnx"], degisimler["sp500"])
+        dxy_p, vix_p, tnx_p, sp500_p = (puanlar["dxy"], puanlar["vix"],
+                                        puanlar["tnx"], puanlar["sp500"])
 
         skor = round(dxy_p + vix_p + tnx_p + sp500_p, 2)
 
@@ -98,6 +142,7 @@ def calistir() -> MakroRaporu:
                 "vix_puan":   vix_p,
                 "tnx_puan":   tnx_p,
                 "sp500_puan": sp500_p,
+                "eksik":      eksik,
             },
         )
 
