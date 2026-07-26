@@ -378,6 +378,59 @@ def test_koruma_katmanlari():
             f"karar={k.eylem}, çağrı={SahteClaude.cagri_sayisi - once}")
 
 
+def test_analiz_hatti():
+    """
+    bot/dongu.py'deki BİRLEŞİK hattı olduğu gibi çalıştırır.
+
+    Yukarıdaki testler ajanları tek tek zincirliyor; burada üretimde
+    gerçekten koşan kod yolu deneniyor — main.py bu fonksiyonu çağırıyor.
+    """
+    from bot.dongu import KISA, UZUN, analiz_hatti, makro_guncelle, takvim_guncelle, haber_guncelle
+    from bot.durum import BaglamDurumu, ZararTakibi
+    print("\n[6] birleşik analiz hattı (bot/dongu.py)")
+
+    durum = BaglamDurumu()
+    zarar = ZararTakibi(limit=75.0, miktar=0.01)
+    zarar.gun_kontrol()
+
+    makro_guncelle(durum)
+    takvim_guncelle(durum)
+    haber_guncelle(durum)
+    _h, _m, _t = durum.oku()
+    kontrol("bağlam durumu üç raporu da taşıyor",
+            _h.basarili and _m.basarili and _t.basarili)
+
+    SahteBinance.breakout_modu = True
+    for katman in (KISA, UZUN):
+        SahteBinance.son_emirler = []
+        analiz_hatti(katman, durum, zarar)
+        emirler = [t for t, _ in SahteBinance.son_emirler if t != "kaldirac"]
+        kontrol(f"{katman.ad} katmanı emre kadar gitti",
+                len(emirler) == 3,
+                f"gönderilen: {SahteBinance.son_emirler}")
+        kontrol(f"{katman.ad} katmanı {katman.kaldirac}x kullandı",
+                ("kaldirac", katman.kaldirac) in SahteBinance.son_emirler)
+
+    # Breakout yoksa kısa katman Claude'a hiç gitmemeli
+    SahteBinance.breakout_modu = False
+    once = SahteClaude.cagri_sayisi
+    SahteBinance.son_emirler = []
+    analiz_hatti(KISA, durum, zarar)
+    kontrol("breakout yokken Claude çağrısı yapılmıyor",
+            SahteClaude.cagri_sayisi == once and not SahteBinance.son_emirler,
+            f"çağrı={SahteClaude.cagri_sayisi - once}")
+
+    # Zarar limiti dolunca hiçbir katman çalışmamalı
+    SahteBinance.breakout_modu = True
+    zarar.ekle(100.0, 1_000_000.0)      # limiti kesin aştır
+    once = SahteClaude.cagri_sayisi
+    SahteBinance.son_emirler = []
+    analiz_hatti(KISA, durum, zarar)
+    kontrol("günlük zarar limitinde işlem yapılmıyor",
+            zarar.limitte_mi() and SahteClaude.cagri_sayisi == once
+            and not SahteBinance.son_emirler)
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 5. ÇALIŞTIRICI
 # ══════════════════════════════════════════════════════════════════════
@@ -394,7 +447,9 @@ def main():
     test_emir(hat)
     test_koruma_katmanlari()
 
-    print("\n[6] model kimlikleri")
+    test_analiz_hatti()
+
+    print("\n[7] model kimlikleri")
     import config
     gecerli = {config.MODEL_ANALIZ, config.MODEL_HABER}
     kontrol("tüm çağrılar config'deki modelleri kullanıyor",
