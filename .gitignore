@@ -1,0 +1,27 @@
+# ── Gizli anahtarlar ─────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python ───────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── Büyük veri dosyaları (yeniden indirilebilir/üretilebilir) ────
+# backtest/veri/          : 671 MB, histdata M1 ham veri + CSV mumlar
+# ml_veri/features.csv    : 82 MB, ozellik_olustur.py ile yeniden üretilir
+# ml_veri/*.pkl           : model.pkl, model_egit.py ile yeniden eğitilir
+backtest/veri/
+backtest/ml_veri/features.csv
+backtest/ml_veri/*.pkl
+
+# ── Üretilen çıktılar ────────────────────────────────────────────
+*.png
+# Claude haber önbelleği — sürekli değişir
+backtest/haber_gecmis.json
+
+# ── Loglar ───────────────────────────────────────────────────────
+*.log
