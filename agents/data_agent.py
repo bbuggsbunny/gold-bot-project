@@ -14,6 +14,8 @@ import pandas as pd
 from binance.client import Client
 import config
 from tipler import KisaVeri, UzunVeri
+from gostergeler import (hesapla_rsi, hesapla_macd,
+                         hesapla_bollinger, hesapla_atr)
 from agents.utils import senkronize_et
 from agents.telegram_agent import bildir_hata
 
@@ -24,26 +26,6 @@ def get_client():
         config.BINANCE_SECRET_KEY,
         testnet=config.TESTNET
     )
-
-
-def hesapla_rsi(close, periyot=14):
-    delta = close.diff()
-    kazan = delta.clip(lower=0).ewm(com=periyot-1, min_periods=periyot).mean()
-    kayip = (-delta.clip(upper=0)).ewm(com=periyot-1, min_periods=periyot).mean()
-    rs    = kazan / kayip.replace(0, float('inf'))
-    return 100 - (100 / (1 + rs))
-
-def hesapla_macd(close):
-    ema12  = close.ewm(span=12, adjust=False).mean()
-    ema26  = close.ewm(span=26, adjust=False).mean()
-    macd   = ema12 - ema26
-    sinyal = macd.ewm(span=9, adjust=False).mean()
-    return macd, sinyal
-
-def hesapla_bollinger(close, periyot=20, std=2):
-    ort   = close.rolling(periyot).mean()
-    sapma = close.rolling(periyot).std()
-    return ort + (sapma * std), ort, ort - (sapma * std)
 
 
 def kisa_vadeli_veri() -> KisaVeri:
@@ -82,7 +64,7 @@ def kisa_vadeli_veri() -> KisaVeri:
             onceki = round(float(close.iloc[-2]), 2)
             degisim = round(((guncel - onceki) / onceki) * 100, 3)
 
-            atr = round(float((high - low).rolling(14).mean().iloc[-1]), 2)
+            atr = round(float(hesapla_atr(high, low).iloc[-1]), 2)
 
             hacim_ort = round(float(volume.rolling(20).mean().iloc[-1]), 2)
             son_hacim = round(float(volume.iloc[-1]), 2)
@@ -158,7 +140,7 @@ def uzun_vadeli_veri() -> UzunVeri:
             bb_ust, bb_ort, bb_alt = hesapla_bollinger(close)
             ma20 = close.rolling(20).mean().iloc[-1]
             ma50 = close.rolling(50).mean().iloc[-1]
-            atr  = (df["yuksek"] - df["dusuk"]).rolling(14).mean().iloc[-1]
+            atr  = hesapla_atr(df["yuksek"], df["dusuk"]).iloc[-1]
 
             rsi_son = round(float(rsi.iloc[-1]), 2)
             if rsi_son < config.RSI_ASIRI_SATIS:

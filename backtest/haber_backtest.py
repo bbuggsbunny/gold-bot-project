@@ -16,7 +16,7 @@ from datetime import datetime
 
 import config
 from tipler import KisaVeri
-from agents.data_agent import hesapla_rsi, hesapla_macd, hesapla_bollinger
+from gostergeler import hesapla_rsi, hesapla_macd, hesapla_bollinger
 from agents import technical_agent, risk_agent, decision_agent
 from agents.macro_agent import calistir as macro_calistir
 from agents.calendar_agent import calistir as takvim_calistir
