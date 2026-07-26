@@ -18,7 +18,9 @@ TESTNET            = os.getenv("TESTNET", "True") == "True"
 
 # ── İşlem Ayarları ──────────────────────────
 SYMBOL    = "XAUUSDT"   # Altın/Dolar paritesi
-QUANTITY  = 0.01        # Her emirde kaç gram altın (küçük tut!)
+QUANTITY  = 0.01        # Her emirde kaç ONS altın (küçük tut!)
+                        # Not: ilk sürümde yorumda "gram" yazıyordu, yanlıştı —
+                        # XAUUSDT sözleşmesi ons cinsinden. 0.01 oz ≈ $45 nominal.
 # Kaldıraç katmana göre seçilir → aşağıdaki KALDIRAC_KISA / KALDIRAC_UZUN
 
 # ── Claude Modelleri ────────────────────────

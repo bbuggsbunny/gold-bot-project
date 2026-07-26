@@ -1458,6 +1458,8 @@ git log --oneline
 
 ### Sorun 6: Backtest ve canlı bot farklı pozisyon boyutu modeli kullanıyor ★ ÖNEMLİ
 
+> **Birim notu (2026-07-26):** `config.QUANTITY` ons cinsindendir. İlk sürümden beri yorum satırında yanlışlıkla "gram" yazıyordu, düzeltildi. Aşağıdaki hesaplar ons üzerinden.
+
 **Tanım:** İki sistem aynı stratejiyi tamamen farklı büyüklükte pozisyonlarla test ediyor:
 
 | | Pozisyon büyüklüğü | $1.000 sermayede |
@@ -1477,9 +1479,9 @@ git log --oneline
 
 **Tanım:** `_zarar_ekle()` her pozisyon için potansiyel SL zararını `QUANTITY × fiyat × SL%` olarak ekliyor: `0.01 × $4.500 × %1 = $0.45`. Limit $75 olduğundan tetiklenmesi için **aynı günde ~167 işlem** açılması gerekir.
 
-**Kök neden:** Hesap doğru; eşik pozisyon boyutuyla uyumsuz. `MAX_GUNLUK_ZARAR = 75` muhtemelen backtestteki sermaye-oranlı modele göre seçilmiş (bkz. Sorun 6).
+**Kök neden — kaynağı bulundu (2026-07-26):** Projenin ilk tasarım konuşmasında (17 Mayıs) verilen tavsiye şuydu: *"Günlük maksimum zarar limiti ekle (örneğin **%2 sermaye**)."* Yani kural **sermayenin yüzdesi** olarak tanımlanmıştı; uygulamaya **sabit $75** olarak geçmiş. Oransal bir kuralın sabit sayıya çevrilmesi limiti pozisyon boyutundan kopardı.
 
-**Önerilen çözüm:** Sorun 6 çözülürken birlikte ele alınmalı. Sabit miktar korunacaksa limit ~$5'e çekilmeli; sermaye-oranlı modele geçilirse $75 anlamlı hale gelir.
+**Önerilen çözüm:** Orijinal niyete dönmek — limiti sermayenin yüzdesi olarak hesaplamak (`bakiye × 0.02`). Bu, Sorun 6'daki pozisyon boyutu kararıyla birlikte ele alınmalı: sermaye-oranlı pozisyon boyutuna geçilirse ikisi doğal olarak uyumlu hale gelir. Sabit 0.01 oz korunacaksa limit ~$5'e çekilmeli.
 
 ---
 
