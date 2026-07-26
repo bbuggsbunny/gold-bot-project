@@ -21,6 +21,11 @@ SYMBOL    = "XAUUSDT"   # Altın/Dolar paritesi
 QUANTITY  = 0.01        # Her emirde kaç gram altın (küçük tut!)
 # Kaldıraç katmana göre seçilir → aşağıdaki KALDIRAC_KISA / KALDIRAC_UZUN
 
+# ── Claude Modelleri ────────────────────────
+# 2026-07-26: claude-sonnet-4-6 → claude-sonnet-5
+MODEL_ANALIZ = "claude-sonnet-5"              # teknik / risk / karar ajanları
+MODEL_HABER  = "claude-haiku-4-5-20251001"    # haber analizi (ucuz, yüksek hacim)
+
 # ── Strateji Eşikleri ───────────────────────
 MIN_GUVEN_SKORU = 6     # Claude bu skorun altında karar verirse emir gitmiyor
 RSI_ASIRI_SATIS = 30    # RSI bu değerin altına düşerse "ucuz" sinyali

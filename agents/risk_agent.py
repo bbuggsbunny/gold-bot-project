@@ -8,16 +8,15 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
 import config
+import claude_istemci
 from tipler import TeknikVeri, TeknikAnaliz, RiskRaporu, HaberRaporu
 
 
 def calistir(teknik: TeknikVeri, teknik_analiz: TeknikAnaliz,
              haberler: HaberRaporu) -> RiskRaporu:
     try:
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        mod    = teknik.mod
+        mod = teknik.mod
 
         # Mod'a göre ek bilgi hazırla
         if mod == "kisa":
@@ -57,38 +56,23 @@ MAX_POZISYON: sayı
 UYARI: tek cumle turkce
 """
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        ham = claude_istemci.sor(
+            prompt,
+            sistem="Sen muhafazakar risk yöneticisisin. Sermayeyi korumak önce gelir.",
             max_tokens=150,
-            system="Sen muhafazakar risk yöneticisisin. Sermayeyi korumak önce gelir.",
-            messages=[{"role": "user", "content": prompt}]
         )
-
-        ham      = response.content[0].text.strip()
-        risk     = "YUKSEK"
-        onay     = "HAYIR"
-        max_poz  = config.QUANTITY
-        uyari    = ""
-
-        for satir in ham.split("\n"):
-            satir = satir.strip()
-            if satir.startswith("RISK:"):
-                risk = satir.replace("RISK:", "").strip()
-            elif satir.startswith("ONAY:"):
-                onay = satir.replace("ONAY:", "").strip()
-            elif satir.startswith("MAX_POZISYON:"):
-                try:
-                    max_poz = float(satir.replace("MAX_POZISYON:", "").strip())
-                except:
-                    pass
-            elif satir.startswith("UYARI:"):
-                uyari = satir.replace("UYARI:", "").strip()
+        alanlar = claude_istemci.alanlari_ayristir(ham, {
+            "RISK":         str,
+            "ONAY":         str,
+            "MAX_POZISYON": float,
+            "UYARI":        str,
+        })
 
         return RiskRaporu(
-            risk=risk,
-            onay=onay,
-            max_pozisyon=max_poz,
-            uyari=uyari,
+            risk=alanlar.get("RISK", "YUKSEK"),
+            onay=alanlar.get("ONAY", "HAYIR"),
+            max_pozisyon=alanlar.get("MAX_POZISYON", config.QUANTITY),
+            uyari=alanlar.get("UYARI", ""),
         )
 
     except Exception as e:

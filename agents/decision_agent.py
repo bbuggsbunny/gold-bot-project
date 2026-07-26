@@ -2,9 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
-import json
 import config
+import claude_istemci
 from tipler import (TeknikVeri, KisaVeri, UzunVeri, TeknikAnaliz, RiskRaporu,
                     Karar, HaberRaporu, MakroRaporu, TakvimRaporu)
 
@@ -124,17 +123,13 @@ guven: 1-10 (min geçerli güven: {min_guven})
 stop_loss_pct: max {config.MAX_STOP_LOSS_PCT}
 take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
 
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        ham = claude_istemci.sor(
+            prompt,
+            sistem=("Sen tüm uzmanları dinleyen baş tradersin. Uzlaşı ararsın. "
+                    "Risk yöneticisine saygı duyarsın."),
             max_tokens=200,
-            system="Sen tüm uzmanları dinleyen baş tradersin. Uzlaşı ararsın. Risk yöneticisine saygı duyarsın.",
-            messages=[{"role": "user", "content": prompt}],
         )
-
-        ham = response.content[0].text.strip()
-        ham = ham.replace("```json", "").replace("```", "").strip()
-        ham_karar = json.loads(ham)
+        ham_karar = claude_istemci.json_ayristir(ham)
 
         # Claude'un JSON anahtarı "karar"; kod içindeki alan adı "eylem"
         karar = Karar(

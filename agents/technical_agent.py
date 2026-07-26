@@ -9,15 +9,14 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import anthropic
 import config
+import claude_istemci
 from tipler import TeknikVeri, TeknikAnaliz
 
 
 def calistir(teknik: TeknikVeri) -> TeknikAnaliz:
     try:
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        mod    = teknik.mod
+        mod = teknik.mod
 
         if mod == "kisa":
             prompt = f"""
@@ -60,42 +59,24 @@ TP_FIYAT: sayı
 YORUM: tek cumle turkce
 """
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
+        ham = claude_istemci.sor(
+            prompt,
+            sistem="Sen teknik analistsin. Sadece sayı ve sinyal üretirsin.",
             max_tokens=150,
-            system="Sen teknik analistsin. Sadece sayı ve sinyal üretirsin.",
-            messages=[{"role": "user", "content": prompt}]
         )
-
-        ham    = response.content[0].text.strip()
-        sinyal = "NOTR"
-        sl     = teknik.fiyat * 0.995
-        tp     = teknik.fiyat * 1.01
-        yorum  = ""
-
-        for satir in ham.split("\n"):
-            satir = satir.strip()
-            if satir.startswith("SINYAL:"):
-                sinyal = satir.replace("SINYAL:", "").strip()
-            elif satir.startswith("SL_FIYAT:"):
-                try:
-                    sl = float(satir.replace("SL_FIYAT:", "").strip())
-                except:
-                    pass
-            elif satir.startswith("TP_FIYAT:"):
-                try:
-                    tp = float(satir.replace("TP_FIYAT:", "").strip())
-                except:
-                    pass
-            elif satir.startswith("YORUM:"):
-                yorum = satir.replace("YORUM:", "").strip()
+        alanlar = claude_istemci.alanlari_ayristir(ham, {
+            "SINYAL":    str,
+            "SL_FIYAT":  float,
+            "TP_FIYAT":  float,
+            "YORUM":     str,
+        })
 
         return TeknikAnaliz(
             mod=mod,
-            sinyal=sinyal,
-            sl=round(sl, 2),
-            tp=round(tp, 2),
-            yorum=yorum,
+            sinyal=alanlar.get("SINYAL", "NOTR"),
+            sl=round(alanlar.get("SL_FIYAT", teknik.fiyat * 0.995), 2),
+            tp=round(alanlar.get("TP_FIYAT", teknik.fiyat * 1.01), 2),
+            yorum=alanlar.get("YORUM", ""),
         )
 
     except Exception as e:

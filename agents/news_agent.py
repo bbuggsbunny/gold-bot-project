@@ -3,9 +3,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import feedparser
-import anthropic
 from datetime import datetime, timezone
 import config
+import claude_istemci
 from tipler import HaberRaporu
 from agents import finbert_agent
 
@@ -101,8 +101,6 @@ def _etki_tahmini(baslik: str, ozet: str = "") -> int:
 
 def _claude_analiz(baslik: str, ozet_metin: str) -> dict:
     """Tek bir haberi Claude ile analiz et, yapılandırılmış dict döndür."""
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
     sistem = (
         "Sen bir emtia piyasası analistisin. Altın fiyatına etkisini analiz et. "
         "SADECE şu 5 satırı yaz, başka hiçbir şey yazma:\n"
@@ -114,43 +112,32 @@ def _claude_analiz(baslik: str, ozet_metin: str) -> dict:
         "ACIKLAMA: neden bu etki skoru?"
     )
 
-    mesaj = f"Haber başlığı: {baslik}\nÖzet: {ozet_metin}"
-
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+    ham = claude_istemci.sor(
+        f"Haber başlığı: {baslik}\nÖzet: {ozet_metin}",
+        sistem=sistem,
+        model=config.MODEL_HABER,
         max_tokens=200,
-        system=sistem,
-        messages=[{"role": "user", "content": mesaj}]
     )
+    alanlar = claude_istemci.alanlari_ayristir(ham, {
+        "SENTIMENT": str,
+        "ETKI":      int,
+        "KATEGORI":  str,
+        "OZET":      str,
+        "ACIKLAMA":  str,
+    })
 
-    yanit = response.content[0].text.strip()
-    sonuc = {
-        "sentiment": "NOTR",
-        "etki": 5,
-        "kategori": "DIGER",
-        "ozet": "",
-        "aciklama": "",
+    # Geçerlilik: sentiment bilinen üç değerden biri, etki 1-10 aralığında
+    sentiment = alanlar.get("SENTIMENT", "NOTR").upper()
+    if sentiment not in ("BULLISH", "BEARISH", "NOTR"):
+        sentiment = "NOTR"
+
+    return {
+        "sentiment": sentiment,
+        "etki":      max(1, min(10, alanlar.get("ETKI", 5))),
+        "kategori":  alanlar.get("KATEGORI", "DIGER"),
+        "ozet":      alanlar.get("OZET", ""),
+        "aciklama":  alanlar.get("ACIKLAMA", ""),
     }
-
-    for satir in yanit.split("\n"):
-        satir = satir.strip()
-        if satir.startswith("SENTIMENT:"):
-            v = satir.split(":", 1)[1].strip().upper()
-            if v in ("BULLISH", "BEARISH", "NOTR"):
-                sonuc["sentiment"] = v
-        elif satir.startswith("ETKI:"):
-            try:
-                sonuc["etki"] = max(1, min(10, int(satir.split(":", 1)[1].strip())))
-            except ValueError:
-                pass
-        elif satir.startswith("KATEGORI:"):
-            sonuc["kategori"] = satir.split(":", 1)[1].strip()
-        elif satir.startswith("OZET:"):
-            sonuc["ozet"] = satir.split(":", 1)[1].strip()
-        elif satir.startswith("ACIKLAMA:"):
-            sonuc["aciklama"] = satir.split(":", 1)[1].strip()
-
-    return sonuc
 
 
 # ──────────────────────────────────────────
@@ -266,53 +253,34 @@ def calistir() -> HaberRaporu:
             )
 
         # RSS'te yeni haber yoksa genel web araması yap (orijinal davranış)
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        bugun  = datetime.now().strftime("%d %B %Y")
+        bugun = datetime.now().strftime("%d %B %Y")
 
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=600,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            system=(
+        ham = claude_istemci.sor(
+            f"Bugün {bugun} itibarıyla altın fiyatını etkileyen en önemli "
+            "gelişmeleri analiz et. Fed politikası, dolar endeksi, jeopolitik "
+            "riskler ve fiziksel talep verilerini göz önünde bulundur.",
+            sistem=(
                 "Sen bir emtia piyasası analistisin. Altın fiyatını etkileyen haberleri analiz et. "
-                "SADECE ve SADECE aşağıdaki 3 satırı yaz, başka hiçbir şey yazma, markdown kullanma:\n"
+                "SADECE ve SADECE aşağıdaki 2 satırı yaz, başka hiçbir şey yazma, markdown kullanma:\n"
                 "SENTIMENT: BULLISH\n"
-                "OZET: buraya 2 cumle turkce ozet\n"
-                "ETKENLER: etken1, etken2, etken3"
+                "OZET: buraya 2 cumle turkce ozet"
             ),
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Bugün {bugun} itibarıyla altın fiyatını etkileyen en önemli gelişmeleri analiz et. "
-                    "Fed politikası, dolar endeksi, jeopolitik riskler ve fiziksel talep verilerini göz önünde bulundur."
-                )
-            }]
+            max_tokens=600,
+            araclar=[{"type": "web_search_20250305", "name": "web_search"}],
         )
+        alanlar = claude_istemci.alanlari_ayristir(ham, {
+            "SENTIMENT": str,
+            "OZET":      str,
+        })
 
-        tam_yanit = "".join(
-            b.text for b in response.content
-            if hasattr(b, "text") and b.text
-        ).strip()
-
-        sentiment = "NOTR"
-        ozet      = ""
-        etkenler  = []
-
-        for satir in tam_yanit.split("\n"):
-            satir = satir.strip()
-            if satir.startswith("SENTIMENT:"):
-                deger = satir.replace("SENTIMENT:", "").strip().upper()
-                if deger in ["BULLISH", "BEARISH", "NOTR"]:
-                    sentiment = deger
-            elif satir.startswith("OZET:"):
-                ozet = satir.replace("OZET:", "").strip()
-            elif satir.startswith("ETKENLER:"):
-                etkenler = [e.strip() for e in satir.replace("ETKENLER:", "").strip().split(",")]
+        sentiment = alanlar.get("SENTIMENT", "NOTR").upper()
+        if sentiment not in ("BULLISH", "BEARISH", "NOTR"):
+            sentiment = "NOTR"
 
         return HaberRaporu(
             sentiment=sentiment,
             etki=5,
-            ozet=ozet,
+            ozet=alanlar.get("OZET", ""),
         )
 
     except Exception as e:

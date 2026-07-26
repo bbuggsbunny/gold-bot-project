@@ -142,6 +142,7 @@ class _Messages:
     def create(self, **kw):
         sistem = kw.get("system", "")
         SahteClaude.cagri_sayisi += 1
+        SahteClaude.kullanilan_modeller.add(kw.get("model"))
 
         if "risk yöneticisi" in sistem:
             return _Yanit("RISK: ORTA\nONAY: EVET\nMAX_POZISYON: 0.01\n"
@@ -161,6 +162,7 @@ class _Messages:
 class SahteClaude:
     """anthropic.Anthropic yerine geçer."""
     cagri_sayisi = 0
+    kullanilan_modeller: set = set()
 
     def __init__(self, *a, **kw):
         self.messages = _Messages()
@@ -176,9 +178,9 @@ def sahte_kurulum():
     data_agent.Client = SahteBinance
     order_agent.Client = SahteBinance
 
-    # Claude
-    for modul in (technical_agent, risk_agent, decision_agent, news_agent):
-        modul.anthropic = type("sahte_anthropic", (), {"Anthropic": SahteClaude})
+    # Claude — tek istemci claude_istemci üzerinden gidiyor
+    import claude_istemci
+    claude_istemci.istemci = lambda: SahteClaude()
 
     # Telegram — hiçbir mesaj gönderilmesin
     telegram_agent._gonder = lambda mesaj: True
@@ -391,6 +393,13 @@ def main():
     hat = list(test_hat(kisa, uzun, makro, takvim, haber))
     test_emir(hat)
     test_koruma_katmanlari()
+
+    print("\n[6] model kimlikleri")
+    import config
+    gecerli = {config.MODEL_ANALIZ, config.MODEL_HABER}
+    kontrol("tüm çağrılar config'deki modelleri kullanıyor",
+            SahteClaude.kullanilan_modeller <= gecerli,
+            f"beklenmeyen model: {SahteClaude.kullanilan_modeller - gecerli}")
 
     gecen  = sum(1 for _, ok, _ in _sonuclar if ok)
     toplam = len(_sonuclar)
