@@ -8,10 +8,28 @@ from agents import finbert_agent
 # ──────────────────────────────────────────
 # Modül seviyesi hafıza
 # ──────────────────────────────────────────
+# ──────────────────────────────────────────
+# RSS kaynakları
+#
+# 2026-07-26: önceki üç kaynağın ÜÇÜ DE ölüydü — Reuters feed'i DNS'te
+# yok (servis kapatılmış), kitco.com/rss ve gold.org/goldhub/rss 404.
+# Yani haber katmanı aylardır hiçbir şey üretmiyordu ve FinBERT hiç
+# çalışmıyordu. Aşağıdakiler ölçülerek seçildi.
+# ──────────────────────────────────────────
 RSS_FEEDLER = [
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://www.kitco.com/rss/",
-    "https://www.gold.org/goldhub/rss",
+    # Google News — altın fiyatını süren makro haberler.
+    # Dışlamalar: -stock -shares -mining madencilik hissesi gürültüsünü,
+    # -karat -tola yerel kuyumcu fiyat listelerini eler.
+    "https://news.google.com/rss/search?"
+    "q=gold+(fed+OR+inflation+OR+dollar+OR+%22interest+rate%22)"
+    "+-stock+-shares+-mining+-karat+-tola+when:1d"
+    "&hl=en-US&gl=US&ceid=US:en",
+
+    # Investing.com emtia — az sayıda ama derlenmiş, konuya yakın
+    "https://www.investing.com/rss/commodities.rss",
+
+    # FXStreet — döviz/emtia profesyonel akışı
+    "https://www.fxstreet.com/rss/news",
 ]
 
 ALTIN_KELIMELER = [
@@ -19,6 +37,19 @@ ALTIN_KELIMELER = [
     "interest rate", "inflation", "cpi", "dollar",
     "altın", "faiz",
 ]
+
+# Anahtar kelimeyi içerse de altın FİYATIYLA ilgisi olmayan başlıklar:
+# perakende kuyumcu fiyat listeleri, madencilik şirketi haberleri, hisse kotasyonları
+GURULTU_KELIMELER = [
+    "22k", "24k", "18k", "karat", "carat", "tola", "sovereign rate",
+    "stock price", "share price", "shares of", "(nyse", "(nasdaq",
+    "music video", "horoscope",
+]
+
+# Tek döngüde işlenecek en fazla yeni haber. FinBERT toplu çağrısı
+# birkaç saniye sürüyor; ilk çalıştırmada yüzlerce başlık gelebildiği
+# için sınır koyuluyor — kalanlar sonraki döngülerde işlenir.
+MAX_YENI_HABER = 15
 
 _son_kontrol: dict[str, datetime] = {}   # feed_url → son kontrol zamanı
 _gorulmus_basliklar: set = set()          # daha önce işlenen başlıklar
@@ -44,7 +75,10 @@ def _zaman_carpani(haber_zamani: datetime) -> float:
 
 
 def _altin_haberi_mi(baslik: str) -> bool:
+    """Altın fiyatıyla ilgili mi? Anahtar kelime var ama gürültü yoksa evet."""
     kucuk = baslik.lower()
+    if any(g in kucuk for g in GURULTU_KELIMELER):
+        return False
     return any(k in kucuk for k in ALTIN_KELIMELER)
 
 
@@ -140,12 +174,23 @@ def _claude_analiz(baslik: str, ozet_metin: str) -> dict:
 # ──────────────────────────────────────────
 def rss_kontrol() -> list:
     """
-    Tüm RSS feedlerini tarar, yeni altın haberleri Claude'a analiz ettirir.
-    Yeni işlenen haberlerin listesini döndürür.
+    Tüm RSS feed'lerini tarar, yeni altın haberlerini analiz eder.
+
+    TOPLU FinBERT (2026-07-26)
+        Önceden her başlık için ayrı `analiz_et()` çağrılıyordu; her çağrı
+        yeni bir subprocess açıp modeli sıfırdan yüklüyordu — başlık başına
+        ~8 saniye. Feed'ler ölü olduğu için bu hiç fark edilmemişti, ama
+        90 başlıkla dönen bir feed 1 dakikalık döngüyü 12 dakika kilitlerdi.
+
+        Artık aday başlıklar önce toplanıyor, sonra TEK `toplu_analiz_et()`
+        çağrısı yapılıyor: model bir kez yükleniyor, 90 başlık ~4 saniye.
+
+    Dönüş: bu turda işlenen yeni haberlerin listesi.
     """
     global _haber_hafizasi
-    yeni_haberler = []
 
+    # ── 1. Adayları topla (henüz FinBERT çağrılmıyor) ────────────────
+    adaylar = []   # (baslik, ozet_metin, haber_zamani, feed_url)
     for feed_url in RSS_FEEDLER:
         try:
             feed = feedparser.parse(feed_url)
@@ -158,52 +203,69 @@ def rss_kontrol() -> list:
                 continue
 
             if not _altin_haberi_mi(baslik):
+                # Konu dışı — bir daha bakmamak için işaretle
                 _gorulmus_basliklar.add(baslik)
                 continue
 
-            _gorulmus_basliklar.add(baslik)
-            haber_zamani = _parse_entry_time(entry)
-            ozet_metin = getattr(entry, "summary", "")[:300]
-
-            # 1. Etki tahmini (anahtar kelime, ücretsiz)
-            etki = _etki_tahmini(baslik, ozet_metin)
-
-            # 2. Sentiment: FinBERT (yerel, ücretsiz)
-            finbert_sonuc = finbert_agent.analiz_et(baslik + " " + ozet_metin[:200])
-            sentiment  = finbert_sonuc["sentiment"]
-            fb_guven   = finbert_sonuc["guven"]
-            kategori   = "DIGER"
-            ozet_kisa  = baslik[:80]
-            aciklama   = f"FinBERT güven: {fb_guven:.2%}"
-
-            # 3. Sadece etki 9-10 → Claude ile derinleştir
-            if etki >= 9:
-                try:
-                    claude_sonuc = _claude_analiz(baslik, ozet_metin)
-                    sentiment  = claude_sonuc["sentiment"]
-                    etki       = claude_sonuc["etki"]
-                    kategori   = claude_sonuc["kategori"]
-                    ozet_kisa  = claude_sonuc["ozet"]
-                    aciklama   = claude_sonuc["aciklama"]
-                except Exception as e:
-                    aciklama += f" | Claude hatası: {e}"
-
-            carpan = _zaman_carpani(haber_zamani)
-            haber = {
-                "baslik":         baslik,
-                "zaman":          haber_zamani.isoformat(),
-                "sentiment":      sentiment,
-                "etki":           etki,
-                "agirlikli_etki": round(etki * carpan, 2),
-                "kategori":       kategori,
-                "ozet":           ozet_kisa,
-                "aciklama":       aciklama,
-                "kaynak":         feed_url,
-                "finbert_guven":  fb_guven,
-            }
-            yeni_haberler.append(haber)
+            adaylar.append((
+                baslik,
+                getattr(entry, "summary", "")[:300],
+                _parse_entry_time(entry),
+                feed_url,
+            ))
 
         _son_kontrol[feed_url] = datetime.now(timezone.utc)
+
+    if not adaylar:
+        return []
+
+    # En yeni haber önce; sınırı aşanlar sonraki döngülerde işlenir
+    # (işaretlenmedikleri için aday olarak kalıyorlar)
+    adaylar.sort(key=lambda a: a[2], reverse=True)
+    adaylar = adaylar[:MAX_YENI_HABER]
+
+    # ── 2. TEK FinBERT çağrısı ───────────────────────────────────────
+    fb_sonuclari = finbert_agent.toplu_analiz_et(
+        [f"{baslik} {ozet[:200]}" for baslik, ozet, _, _ in adaylar]
+    )
+
+    # ── 3. Etki skoru + gerekirse Claude ─────────────────────────────
+    yeni_haberler = []
+    for (baslik, ozet_metin, haber_zamani, feed_url), fb in zip(adaylar, fb_sonuclari):
+        _gorulmus_basliklar.add(baslik)
+
+        etki       = _etki_tahmini(baslik, ozet_metin)
+        sentiment  = fb["sentiment"]
+        fb_guven   = fb["guven"]
+        kategori   = "DIGER"
+        ozet_kisa  = baslik[:80]
+        aciklama   = f"FinBERT güven: {fb_guven:.2%}"
+
+        # Sadece etki 9-10 → Claude ile derinleştir (nadir, ücretli)
+        if etki >= 9:
+            try:
+                claude_sonuc = _claude_analiz(baslik, ozet_metin)
+                sentiment  = claude_sonuc["sentiment"]
+                etki       = claude_sonuc["etki"]
+                kategori   = claude_sonuc["kategori"]
+                ozet_kisa  = claude_sonuc["ozet"]
+                aciklama   = claude_sonuc["aciklama"]
+            except Exception as e:
+                aciklama += f" | Claude hatası: {e}"
+
+        carpan = _zaman_carpani(haber_zamani)
+        yeni_haberler.append({
+            "baslik":         baslik,
+            "zaman":          haber_zamani.isoformat(),
+            "sentiment":      sentiment,
+            "etki":           etki,
+            "agirlikli_etki": round(etki * carpan, 2),
+            "kategori":       kategori,
+            "ozet":           ozet_kisa,
+            "aciklama":       aciklama,
+            "kaynak":         feed_url,
+            "finbert_guven":  fb_guven,
+        })
 
     # Hafızayı güncelle (son 10 haber)
     _haber_hafizasi = (_haber_hafizasi + yeni_haberler)[-10:]

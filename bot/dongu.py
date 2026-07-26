@@ -44,6 +44,9 @@ class Katman:
     bitis_cizgisi: bool = False
 
 
+RSS_PERIYOT_DK = 5   # RSS taraması kaç dakikada bir yapılsın
+
+
 KISA = Katman(
     ad="KISA",
     veri_fn=data_agent.kisa_vadeli_veri,
@@ -304,7 +307,15 @@ def zamanlayici(durum: BaglamDurumu, zarar: ZararTakibi,
                 haber_guncelle(durum)
                 analiz_hatti(UZUN, durum, zarar, kayitci)
             else:
-                news_agent.rss_kontrol()
+                # RSS her 5 dakikada bir: 3 feed + FinBERT toplu çağrısı
+                # 10-20 sn sürüyor, her dakika yapmak hem döngüyü
+                # yavaşlatır hem feed sağlayıcılarını gereksiz yorar.
+                # Haber akışı dakikalık çözünürlük gerektirmiyor.
+                if dakika % RSS_PERIYOT_DK == 0:
+                    yeni = news_agent.rss_kontrol()
+                    if yeni:
+                        print(f"  [RSS] {len(yeni)} yeni haber işlendi "
+                              f"(son: {yeni[-1]['sentiment']})")
                 analiz_hatti(KISA, durum, zarar, kayitci)
 
         except KeyboardInterrupt:
