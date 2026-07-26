@@ -1,6 +1,6 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 26 Temmuz 2026 (rev 5 — canlı akışı bloke eden hatalar düzeltildi)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 6 — mimari yeniden yapılandırma)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
 > **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
 
@@ -133,11 +133,21 @@ UZUN VADELİ DÖNGÜ (uzun_vadeli_dongu, 4 saatte bir):
 
 ```
 ~/gold-bot-project/
-├── main.py                     # Ana döngü — 2 katman + 3 bağlam ajan
-├── config.py                   # Tüm sabitler, API anahtarları (env'den)
+├── main.py                     # ★ Giriş noktası (46 satır) — banner + zamanlayıcı çağrısı
+├── config.py                   # Tüm sabitler, API anahtarları (env'den), model kimlikleri
+├── tipler.py                   # ★ Ajanlar arası veri sözleşmeleri (dataclass)
+├── gostergeler.py              # ★ RSI/MACD/BB/ATR — canlı yolun tek kaynağı
+├── claude_istemci.py           # ★ Tek Claude istemcisi + yanıt ayrıştırma
 ├── .env                        # Gizli anahtarlar (git'e eklenmez)
-├── .gitignore                  # ★ Takip dışı: .env, veri/, features.csv, *.pkl, *.png
+├── .gitignore                  # Takip dışı: .env, veri/, features.csv, *.pkl, *.png
 ├── PROJE.md                    # Bu dosya
+│
+├── bot/                        # ★ İş mantığı (eskiden main.py'nin içindeydi)
+│   ├── durum.py                #   BaglamDurumu + ZararTakibi
+│   └── dongu.py                #   Katman tanımları, analiz_hatti(), zamanlayici()
+│
+├── testler/                    # ★ Otomatik test
+│   └── duman_testi.py          #   Ağsız/ücretsiz uçtan uca doğrulama (47 kontrol)
 │
 ├── agents/
 │   ├── __init__.py
@@ -188,16 +198,20 @@ UZUN VADELİ DÖNGÜ (uzun_vadeli_dongu, 4 saatte bir):
 
 ```
 main.py
-  → agents/data_agent.py
-  → agents/news_agent.py → agents/finbert_agent.py (subprocess)
-  → agents/technical_agent.py
-  → agents/risk_agent.py
-  → agents/decision_agent.py
-  → agents/order_agent.py → agents/utils.py
-  → agents/macro_agent.py
-  → agents/calendar_agent.py
-  → agents/telegram_agent.py
-  → config.py (tüm ajanlar)
+  → bot/durum.py   (BaglamDurumu, ZararTakibi)
+  → bot/dongu.py   (zamanlayici → analiz_hatti)
+       → agents/data_agent.py       → gostergeler.py
+       → agents/technical_agent.py  ┐
+       → agents/risk_agent.py       ├→ claude_istemci.py
+       → agents/decision_agent.py   ┘
+       → agents/order_agent.py      → agents/utils.py
+       → agents/news_agent.py       → agents/finbert_agent.py (subprocess)
+       → agents/macro_agent.py
+       → agents/calendar_agent.py
+       → agents/telegram_agent.py
+
+tipler.py ← tüm ajanlar (veri sözleşmeleri)
+config.py ← tüm modüller
 ```
 
 ---
@@ -267,7 +281,7 @@ main.py
  "sl":4530.0,"tp":4580.0,"yorum":"tek cümle"}
 ```
 
-**API:** Claude Sonnet 4.6 (`claude-sonnet-4-6`), max_tokens=150
+**API:** Claude Sonnet 5 (`config.MODEL_ANALIZ`), max_tokens=150
 
 **Kısa vadeli prompt:** Fiyat, yüksek/düşük, direnç/destek, ATR, hacim, breakout yönü
 
@@ -1120,7 +1134,7 @@ RSI_ASIRI_SATIS = 30    # RSI < 30 → ASIRI_SATILMIS yorumu
 RSI_ASIRI_ALIS  = 70    # RSI > 70 → ASIRI_ALINMIS yorumu
 
 # ── Döngü Ayarı ──────────────────────────────────────────────────
-BEKLEME_DAKIKA = 15     # Artık kullanılmıyor; main.py time.sleep(60) kullanır
+# BEKLEME_DAKIKA kaldırıldı (2026-07-26) — bkz. bot/dongu.py:zamanlayici()
 
 # ── Risk Yönetimi ─────────────────────────────────────────────────
 MAX_STOP_LOSS_PCT   = 1.0   # Maksimum SL: fiyatın %1'i
@@ -1158,9 +1172,9 @@ ATR_TP_CARPAN = 3.0   # TP = giriş ± ATR × 3.0
 
 | Kullanım | Model | max_tokens | Nerede |
 |----------|-------|-----------|--------|
-| Teknik analiz | claude-sonnet-4-6 | 150 | technical_agent.py |
-| Risk değerlendirme | claude-sonnet-4-6 | 150 | risk_agent.py |
-| Nihai karar | claude-sonnet-4-6 | 200 | decision_agent.py |
+| Teknik analiz | claude-sonnet-5 | 150 | technical_agent.py |
+| Risk değerlendirme | claude-sonnet-5 | 150 | risk_agent.py |
+| Nihai karar | claude-sonnet-5 | 200 | decision_agent.py |
 | Kritik haber analizi | claude-haiku-4-5-20251001 | 200 | news_agent.py |
 | Backtest haber | claude-haiku-4-5-20251001 | 150 | haber_uzun_backtest.py |
 
@@ -1259,15 +1273,28 @@ python3 backtest/motor.py
 python3 backtest/strateji_breakout.py
 ```
 
-### Bireysel ajan testleri
+### Duman testi — her değişiklikten sonra çalıştır ★
 
 ```bash
-python3 agents/data_agent.py        # Binance veri kontrolü
-python3 agents/macro_agent.py       # DXY/VIX/TNX/SP500 anlık
-python3 agents/calendar_agent.py    # Ekonomik takvim durumu
-python3 agents/news_agent.py        # RSS + FinBERT testi
-python3 agents/finbert_agent.py     # FinBERT doğrudan test
-python3 agents/decision_agent.py    # Karar ajanı test senaryoları
+python3 testler/duman_testi.py
+```
+
+Ağa çıkmaz, API çağrısı yapmaz, ücretsizdir, ~1 saniye sürer. Claude, Binance, Telegram, yfinance ve investing.com sahte nesnelerle değiştirilip tüm canlı hat baştan sona koşturulur (47 kontrol). Çıkış kodu 0 ise her şey yerinde.
+
+Yakaladığı hata sınıfı: bir ajanın döndürdüğü alanlarla onu tüketen ajanın beklediği alanlar arasındaki uyumsuzluk — 26 Temmuz'da botu iki ay boyunca işlem açamaz hâlde bırakan hata tam olarak buydu.
+
+### Bireysel ajan testleri
+
+> **2026-07-26 değişikliği:** ajan modüllerinden `sys.path` hack'i kaldırıldığı için artık `-m` ile, proje kökünden çalıştırılmalı.
+
+```bash
+cd ~/gold-bot-project
+python3 -m agents.data_agent        # Binance veri kontrolü
+python3 -m agents.macro_agent       # DXY/VIX/TNX/SP500 anlık
+python3 -m agents.calendar_agent    # Ekonomik takvim durumu
+python3 -m agents.news_agent        # RSS + FinBERT testi
+python3 -m agents.finbert_agent     # FinBERT doğrudan test
+python3 -m agents.decision_agent    # Karar ajanı test senaryoları
 ```
 
 ### Log dosyasını izleme
@@ -1355,6 +1382,12 @@ git log --oneline
 | 2026-07-26 | Ajan hataları artık loglanıyor | `decision`/`technical`/`risk` ajanlarının `except` blokları hatayı yazmadan güvenli varsayılana dönüyordu (BEKLE / NOTR / ONAY:HAYIR) — bu yüzden kritik hata "bugün sinyal yok" gibi görünüyordu | Üç ajan da hata tipi + mesajı basıyor. `decision_agent`'taki tam prompt dökümü kaldırıldı. Commit `0f7e7a9` |
 | 2026-07-26 | `risk_agent` prompt'unda yanlış config değişkeni | `MAX GÜNLÜK ZARAR: ${MAX_STOP_LOSS_PCT}` yazıyordu → Claude'a limit "$1.0" gidiyordu ($75 yerine) | `MAX_GUNLUK_ZARAR` kullanılıyor, SL limiti ayrı satırda. Commit `18d98bc` |
 | 2026-07-26 | Katman kaldıracı gerçekten uygulanır oldu | `order_agent` her emirde `config.LEVERAGE=5` kullanıyordu; `KALDIRAC_KISA=10`/`KALDIRAC_UZUN=3` sadece risk ajanının prompt metnindeydi. Risk ajanı 10x'e göre değerlendirip emir 5x gidiyordu | `order_agent.calistir()` kaldıracı parametre alıyor; `LEVERAGE` sabiti kaldırıldı. **Davranış değişti:** kısa 10x, uzun 3x. Commit `7d500cf` |
+| 2026-07-26 | **Duman testi eklendi (`testler/duman_testi.py`) ★** | Otomatik test yoktu; ajanların kendi test blokları uydurma sözlükler kullandığı için koruma sağlamıyordu | Ağsız/ücretsiz uçtan uca test, 47 kontrol. Hiçbir ara sözlük elle yazılmıyor — her ajan bir öncekinin gerçek çıktısıyla besleniyor. 26 Temmuz hatası geri konulduğunda test 29/37'ye düşüp çıkış kodu 1 veriyor. Commit `9758dec` |
+| 2026-07-26 | **`tipler.py` — ajanlar arası veri sözleşmeleri (dataclass) ★** | Ajanlar serbest `dict` döndürüyordu; hangi anahtarın var olduğu hiçbir yerde yazılı değildi. Kritik hatanın kök nedeni buydu | Olmayan alan artık `AttributeError` veriyor (yutulabilen `KeyError` değil). `KisaVeri`, `UzunVeri`, `TeknikAnaliz`, `RiskRaporu`, `Karar`, `EmirSonucu`, `HaberRaporu`, `MakroRaporu`, `TakvimRaporu`, `Olay`. Commit `1db2a79`, `ee7412c` |
+| 2026-07-26 | `claude_istemci.py` — tek Claude istemcisi | İstemci 6 ayrı yerde kuruluyor, `"ANAHTAR: değer"` ayrıştırma her ajanda kopyalanıyordu (~80 satır tekrar) | Tek istemci + ortak `alanlari_ayristir()` / `json_ayristir()`. **Model `claude-sonnet-4-6` → `claude-sonnet-5`;** kimlikler `config.MODEL_ANALIZ` / `MODEL_HABER`'e taşındı. Commit `295550c` |
+| 2026-07-26 | `gostergeler.py` — canlı yol tek gösterge kaynağı | RSI dört dosyada, üçü farklı formülle yazılıydı | `data_agent` ve `haber_backtest` buradan alıyor. Formüller birebir korundu (300 mumluk seride `Series.equals` ile doğrulandı). Backtest kopyaları bilinçli olarak yerinde — birleştirmek yayınlanmış sonuçları değiştirir. Commit `2cd17a4` |
+| 2026-07-26 | `bot/durum.py` + `bot/dongu.py` — main.py bölündü | `main.py` 384 satırdı; `kisa_vadeli_dongu` ve `uzun_vadeli_dongu` %90 aynı koddu | Durum 6 global + 4 kilit yerine iki sınıfta. İki döngü tek `analiz_hatti()` oldu, fark bir `Katman` tanımına indi. **`main.py` 384 → 46 satır.** Commit `0825b66` |
+| 2026-07-26 | `sys.path` hack'i 8 ajan dosyasından kaldırıldı | Kütüphane modüllerinin kendi import yolunu kurması gereksiz | Yolu giriş noktası kuruyor. **Çalıştırma değişti:** `python3 -m agents.data_agent` (bkz. Bölüm 10). Commit `a0f0feb` |
 | 2026-07-26 | `.gitignore` oluşturuldu | 757 MB'lık klasörden sadece kodun takip edilmesi ve `.env` sızıntısının engellenmesi | `.env`, `backtest/veri/` (671 MB), `features.csv` (82 MB), `*.pkl`, `*.png`, `__pycache__`, `haber_gecmis.json` takip dışı. Commit öncesi kodda gömülü API anahtarı taraması yapıldı — temiz |
 
 ---
@@ -1389,13 +1422,19 @@ git log --oneline
 
 ---
 
-### Sorun 3: BEKLEME_DAKIKA config'de var ama kullanılmıyor
+### ~~Sorun 3: BEKLEME_DAKIKA config'de var ama kullanılmıyor~~ — **ÇÖZÜLDÜ** (2026-07-26)
 
-**Tanım:** `config.BEKLEME_DAKIKA = 15` tanımlı ama `main.py` `time.sleep(60)` kullanıyor.
+`config.BEKLEME_DAKIKA` kaldırıldı. Döngü periyotları `bot/dongu.py:zamanlayici()` içinde: 1 dk kısa vadeli, 15 dk makro, 60 dk takvim, 240 dk uzun vadeli.
 
-**Kök neden:** main.py yeniden yazıldığında config değeri güncellenmedi.
+---
 
-**Önerilen çözüm:** `config.BEKLEME_DAKIKA` kaldır veya main.py'yı bunu kullansın.
+### Sorun 8: technical_agent'ın SL/TP çıktısı ve risk_agent'ın max_pozisyon'u kullanılmıyor
+
+**Tanım:** `technical_agent` Claude'dan `SL_FIYAT` / `TP_FIYAT` istiyor, `risk_agent` `MAX_POZISYON` istiyor — üçü de hiçbir yerde okunmuyor. Nihai SL/TP'yi `decision_agent` ayrıca soruyor, pozisyon boyutu `config.QUANTITY` sabit.
+
+**Neden hâlâ duruyor:** Bu alanları kaldırmak prompt metnini değiştirir; prompt değişince Claude'un yanıtı da değişir. 2026-07-26 yeniden yapılandırması "sıfır davranış değişikliği" kuralıyla yapıldığı için ertelendi.
+
+**Önerilen çözüm:** Ayrı bir commit'te, prompt değişikliğinin bilinçli olduğu belirtilerek kaldırılmalı. Her çağrıda birkaç token tasarrufu sağlar.
 
 ---
 
@@ -1460,7 +1499,7 @@ git log --oneline
 | 3 | Kaldıraç / position sizing iyileştirmesi | 17 yıllık backtest; yıllık max DD -%37–-%41'e kadar çıkıyor, hedef -%15 aşılıyor | `KALDIRAC_UZUN` 3x → 2x veya volatiliteye göre dinamik pozisyon boyutu | Orta |
 | 4 | Gerçek tarihsel haber API | 30g backtest haberlerinin gerçek olması | newsapi.org ücretsiz plan (100 req/gün) | Orta |
 | 5 | sudo chronyc headless fix | Zaman sapmasında bot manuel müdahale bekliyor | /etc/sudoers.d/chronyc NOPASSWD | Düşük |
-| 6 | BEKLEME_DAKIKA config temizliği | Kafa karışıklığı (tanımlı ama kullanılmıyor) | config'den sil | Çok düşük |
+| ~~6~~ | ~~BEKLEME_DAKIKA config temizliği~~ | ~~Kafa karışıklığı~~ | **TAMAMLANDI** — 2026-07-26 mimari turunda kaldırıldı | — |
 | ~~7~~ | ~~Makine öğrenmesi modeli (feature eng + ilk model)~~ | ~~Claude'a bağımlılığı azaltmak~~ | **DEVAM EDİYOR** — `ozellik_olustur.py` + `model_egit.py` tamamlandı; precision AL=0.36 @ eşik=0.50; canlı bot entegrasyonu bekliyor | Yüksek |
 | 7a | ML modeli canlı bota entegre et | Gerçek zamanlı sinyal üretimi | `decision_agent`'a `model.pkl` skoru ek girdi olarak ver; eşik=0.45–0.50 | Orta |
 | 7b | ML precision > 0.40 hedefi | Daha güvenilir sinyal | RSI divergence, fiyat pattern, orderbook özellikleri ekle veya SMOTE | Yüksek |
@@ -1550,9 +1589,9 @@ git log --oneline
 ### Günlük tahmini API maliyeti
 
 **Kısa vadeli döngü (her dakika, breakout varsa):**
-- technical_agent: claude-sonnet-4-6, ~150 token çıktı → ~$0.001/çağrı
-- risk_agent: claude-sonnet-4-6, ~150 token → ~$0.001/çağrı
-- decision_agent: claude-sonnet-4-6, ~200 token → ~$0.001/çağrı
+- technical_agent: claude-sonnet-5, ~150 token çıktı → ~$0.001/çağrı
+- risk_agent: claude-sonnet-5, ~150 token → ~$0.001/çağrı
+- decision_agent: claude-sonnet-5, ~200 token → ~$0.001/çağrı
 - Breakout sıklığı: tipik olarak saatte 0-3 kez → günlük 0-72 breakout
 - Günlük tahmini (10 breakout × 3 ajan): **~$0.03**
 

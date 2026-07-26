@@ -173,11 +173,6 @@ def uzun_vadeli_veri() -> UzunVeri:
     return UzunVeri.hata(son_hata)
 
 
-# Geriye uyumluluk için eski fonksiyon
-def calistir() -> UzunVeri:
-    return uzun_vadeli_veri()
-
-
 if __name__ == "__main__":
     import json
     print("=== KISA VADELİ VERİ (1m) ===")

@@ -32,7 +32,10 @@ RSI_ASIRI_SATIS = 30    # RSI bu değerin altına düşerse "ucuz" sinyali
 RSI_ASIRI_ALIS  = 70    # RSI bu değerin üstüne çıkarsa "pahalı" sinyali
 
 # ── Döngü Ayarı ─────────────────────────────
-BEKLEME_DAKIKA = 15     # Bot kaç dakikada bir analiz yapsın
+# Döngü periyotları bot/dongu.py:zamanlayici() içinde sabit:
+#   1 dk kısa vadeli | 15 dk makro | 60 dk takvim | 240 dk uzun vadeli
+# (BEKLEME_DAKIKA sabiti 2026-07-26'da kaldırıldı — tanımlıydı ama
+#  hiçbir yerde okunmuyordu.)
 
 # ── Risk Yönetimi ────────────────────────────
 MAX_STOP_LOSS_PCT    = 1.0   # Maksimum zarar: pozisyonun %1'i
