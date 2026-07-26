@@ -84,17 +84,29 @@ class ZararTakibi:
         self._durdu  = False
         self._gun    = None
 
-    def gun_kontrol(self) -> None:
-        """Gece 00:00 geçişini tespit edip sayacı sıfırlar."""
+    def gun_kontrol(self):
+        """
+        Gece 00:00 geçişini tespit edip sayacı sıfırlar.
+
+        Dönüş: gün gerçekten değiştiyse `(önceki_gün, önceki_toplam)`,
+        aksi halde None. İlk başlatmada da None döner — o an biten bir gün
+        yok. Çağıran bu bilgiyle günlük özet bildirimini gönderir.
+        """
         bugun = datetime.now().date()
         with self._kilit:
-            if self._gun is None or bugun != self._gun:
-                if self._gun is not None:
-                    print(f"\n  [ZARAR] Yeni gün — sayaç sıfırlandı "
-                          f"(önceki gün toplam: ${self._toplam:.2f})")
-                self._toplam = 0.0
-                self._durdu  = False
-                self._gun    = bugun
+            if self._gun is not None and bugun == self._gun:
+                return None
+
+            devir = None
+            if self._gun is not None:
+                print(f"\n  [ZARAR] Yeni gün — sayaç sıfırlandı "
+                      f"(önceki gün toplam: ${self._toplam:.2f})")
+                devir = (self._gun, self._toplam)
+
+            self._toplam = 0.0
+            self._durdu  = False
+            self._gun    = bugun
+            return devir
 
     def limitte_mi(self) -> bool:
         """True dönerse bugün için işlem yasak."""

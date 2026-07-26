@@ -25,3 +25,7 @@ backtest/haber_gecmis.json
 
 # ── Loglar ───────────────────────────────────────────────────────
 *.log
+
+# ── Calisma zamani kayitlari ──────────────────────────────────────
+# Karar CSV'si ve gunluk durum — her kosuda buyur, kod degil
+kayitlar/

@@ -13,6 +13,7 @@ import config
 from agents.telegram_agent import bildir_durum
 from bot.durum import BaglamDurumu, ZararTakibi
 from bot.dongu import KISA, UZUN, zamanlayici
+from bot.kayit import Kayitci, KARAR_CSV
 
 
 def _banner():
@@ -33,11 +34,13 @@ def main():
     mod = "TESTNET" if config.TESTNET else "GERÇEK PARA"
     bildir_durum(f"Altın Trading Botu başlatıldı.\nMod: {mod} | Sembol: {config.SYMBOL}")
 
-    durum = BaglamDurumu()
-    zarar = ZararTakibi(limit=config.MAX_GUNLUK_ZARAR, miktar=config.QUANTITY)
+    durum   = BaglamDurumu()
+    zarar   = ZararTakibi(limit=config.MAX_GUNLUK_ZARAR, miktar=config.QUANTITY)
+    kayitci = Kayitci()
+    print(f"  Karar kaydı : {KARAR_CSV}")
 
     try:
-        zamanlayici(durum, zarar)
+        zamanlayici(durum, zarar, kayitci)
     except KeyboardInterrupt:
         sys.exit(0)
 

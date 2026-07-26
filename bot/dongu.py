@@ -20,10 +20,12 @@ from typing import Callable
 import config
 from tipler import TeknikVeri
 from agents import data_agent, news_agent, technical_agent, risk_agent, decision_agent, order_agent
-from agents.telegram_agent import bildir_sinyal, bildir_emir, bildir_hata, bildir_durum
+from agents.telegram_agent import (bildir_sinyal, bildir_emir, bildir_hata,
+                                   bildir_durum, bildir_ozet)
 from agents.macro_agent import calistir as macro_calistir
 from agents.calendar_agent import calistir as takvim_calistir
 from bot.durum import BaglamDurumu, ZararTakibi
+from bot.kayit import Kayitci
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -117,9 +119,12 @@ def takvim_guncelle(durum: BaglamDurumu) -> None:
 # Analiz hattı — iki katman için ortak
 # ══════════════════════════════════════════════════════════════════════
 def analiz_hatti(katman: Katman, durum: BaglamDurumu,
-                 zarar: ZararTakibi) -> None:
+                 zarar: ZararTakibi, kayitci: Kayitci) -> None:
     """
     Veri → teknik → risk → karar → emir.
+
+    Her çıkış noktası kayitci'ye bir satır yazar; `asama` sütunu döngünün
+    nereye kadar gittiğini söyler (bkz. bot/kayit.py).
 
     Erken çıkışlar (hiç Claude çağrısı yapılmaz):
       1. Günlük zarar limiti dolmuş
@@ -138,6 +143,7 @@ def analiz_hatti(katman: Katman, durum: BaglamDurumu,
     # 1. Günlük zarar limiti
     if zarar.limitte_mi():
         print(f"  [{etiket}] ⛔ Günlük zarar limitine ulaşıldı — işlem yok.")
+        kayitci.yaz(etiket, "zarar_limiti")
         bitir()
         return
 
@@ -145,6 +151,7 @@ def analiz_hatti(katman: Katman, durum: BaglamDurumu,
     takvim_mod = durum.takvim_modu
     if takvim_mod == "YUKSEK_RISK":
         print(f"  [{etiket}] ⛔ Ekonomik veri bekleniyor — işlem yok.")
+        kayitci.yaz(etiket, "takvim_bloke")
         bitir()
         return
     if takvim_mod == "DIKKATLI":
@@ -154,12 +161,14 @@ def analiz_hatti(katman: Katman, durum: BaglamDurumu,
     teknik = katman.veri_fn()
     if not teknik.basarili:
         print(f"  [{etiket}] Veri hatası: {teknik.mesaj}")
+        kayitci.yaz(etiket, "veri_hatasi", gerekce=teknik.mesaj)
         return
 
     if katman.breakout_sart:
         print(f"  [{etiket}] Fiyat: {teknik.fiyat} | Breakout: {teknik.breakout}")
         if teknik.breakout == "YOK":
             print(f"  [{etiket}] Breakout yok, bekleniyor.")
+            kayitci.yaz(etiket, "breakout_yok", fiyat=teknik.fiyat)
             return
     else:
         print(f"  [{etiket}] Fiyat: {teknik.fiyat} | RSI: {teknik.rsi} | "
@@ -185,9 +194,13 @@ def analiz_hatti(katman: Katman, durum: BaglamDurumu,
     print(f"  [{etiket}] Karar: {karar.eylem} | Güven: {karar.guven}/10")
 
     # 8. Emir
+    emir_durum = ""
+    sl = tp = 0.0
     if karar.islem_var and karar.guven >= config.MIN_GUVEN_SKORU:
         bildir_sinyal(karar.eylem, teknik.fiyat, katman.strateji, karar.guven)
         sonuc = order_agent.calistir(karar, teknik.fiyat, katman.kaldirac)
+        emir_durum = sonuc.durum
+        sl, tp = sonuc.stop_loss, sonuc.take_profit
         if sonuc.basarili:
             bildir_emir(karar.eylem, teknik.fiyat, config.QUANTITY,
                         sonuc.stop_loss, sonuc.take_profit)
@@ -199,32 +212,87 @@ def analiz_hatti(katman: Katman, durum: BaglamDurumu,
                     f"Bugün için tüm işlemler durduruldu. Yarın sıfırlanacak."
                 )
 
+    kayitci.yaz(
+        etiket, "emir" if emir_durum == "ok" else "karar",
+        fiyat=teknik.fiyat, sinyal=teknik_analiz.sinyal,
+        risk=risk.risk, onay=risk.onay,
+        karar=karar.eylem, guven=karar.guven,
+        emir_durum=emir_durum, sl=sl, tp=tp,
+        kaldirac=katman.kaldirac if emir_durum == "ok" else 0,
+        gerekce=karar.gerekce,
+    )
+
     bitir()
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Gün sonu özeti
+# ══════════════════════════════════════════════════════════════════════
+def gunluk_ozet_gonder(kayitci: Kayitci, gun, acik_zarar: float) -> None:
+    """
+    Gece 00:00 devrinde biten günün özetini Telegram'a gönderir.
+
+    K/Z gerçek Binance bakiyesinden hesaplanır (bugünkü bakiye − dünkü).
+    İlk gün önceki bakiye bilinmediği için K/Z 0 gösterilir.
+    """
+    istatistik = kayitci.gun_istatistigi(gun)
+    bakiye     = order_agent.bakiye_getir()
+    onceki     = kayitci.onceki_bakiye()
+
+    kar_zarar = 0.0
+    if bakiye >= 0:
+        if onceki is not None:
+            kar_zarar = bakiye - onceki
+        kayitci.bakiye_kaydet(bakiye)
+
+    print(f"\n  [ÖZET] {gun} — döngü:{istatistik['dongu']} "
+          f"karar:{istatistik['karar_asamasi']} emir:{istatistik['emir']} "
+          f"bakiye:${bakiye:.2f}")
+
+    bildir_ozet(kar_zarar, istatistik["emir"], max(bakiye, 0.0))
+
+    # bildir_ozet sabit üç alan gösteriyor; ayrıntı ayrı mesajda
+    bildir_durum(
+        f"📊 <b>{gun} detay</b>\n"
+        f"Döngü: {istatistik['dongu']} "
+        f"(breakout yok: {istatistik['breakout_yok']})\n"
+        f"Karar aşamasına gelen: {istatistik['karar_asamasi']}\n"
+        f"AL:{istatistik['al']}  SAT:{istatistik['sat']}  "
+        f"BEKLE:{istatistik['bekle']}\n"
+        f"Ortalama güven: {istatistik['ort_guven']:.1f}/10\n"
+        f"Açılan risk (potansiyel SL): ${acik_zarar:.2f}"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════
 # Zamanlayıcı
 # ══════════════════════════════════════════════════════════════════════
-def zamanlayici(durum: BaglamDurumu, zarar: ZararTakibi) -> None:
+def zamanlayici(durum: BaglamDurumu, zarar: ZararTakibi,
+                kayitci: Kayitci) -> None:
     """
     Dakikalık ana döngü:
         her 15 dk  → makro
         her 60 dk  → takvim
         her 240 dk → uzun vadeli katman (+ haber)
         diğer dk   → RSS taraması + kısa vadeli katman
+        gün devri  → günlük özet bildirimi
     """
     zarar.gun_kontrol()
     haber_guncelle(durum)
     makro_guncelle(durum)
     takvim_guncelle(durum)
-    analiz_hatti(UZUN, durum, zarar)
+    analiz_hatti(UZUN, durum, zarar, kayitci)
 
     dakika = 0
     while True:
         try:
             time.sleep(60)
             dakika += 1
-            zarar.gun_kontrol()
+
+            devir = zarar.gun_kontrol()
+            if devir:
+                biten_gun, acik_zarar = devir
+                gunluk_ozet_gonder(kayitci, biten_gun, acik_zarar)
 
             if dakika % 15 == 0:
                 makro_guncelle(durum)
@@ -234,10 +302,10 @@ def zamanlayici(durum: BaglamDurumu, zarar: ZararTakibi) -> None:
 
             if dakika % 240 == 0:
                 haber_guncelle(durum)
-                analiz_hatti(UZUN, durum, zarar)
+                analiz_hatti(UZUN, durum, zarar, kayitci)
             else:
                 news_agent.rss_kontrol()
-                analiz_hatti(KISA, durum, zarar)
+                analiz_hatti(KISA, durum, zarar, kayitci)
 
         except KeyboardInterrupt:
             bildir_durum("Bot durduruldu (Ctrl+C).")

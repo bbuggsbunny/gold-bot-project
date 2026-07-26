@@ -401,12 +401,18 @@ def test_analiz_hatti():
     Yukarıdaki testler ajanları tek tek zincirliyor; burada üretimde
     gerçekten koşan kod yolu deneniyor — main.py bu fonksiyonu çağırıyor.
     """
-    from bot.dongu import KISA, UZUN, analiz_hatti, makro_guncelle, takvim_guncelle, haber_guncelle
+    import tempfile
+    from pathlib import Path
+    from bot.dongu import (KISA, UZUN, analiz_hatti, makro_guncelle,
+                           takvim_guncelle, haber_guncelle, gunluk_ozet_gonder)
     from bot.durum import BaglamDurumu, ZararTakibi
+    from bot.kayit import Kayitci
     print("\n[6] birleşik analiz hattı (bot/dongu.py)")
 
-    durum = BaglamDurumu()
-    zarar = ZararTakibi(limit=75.0, miktar=0.01)
+    gecici  = Path(tempfile.mkdtemp(prefix="duman_kayit_"))
+    kayitci = Kayitci(gecici / "kararlar.csv", gecici / "gunluk_durum.json")
+    durum   = BaglamDurumu()
+    zarar   = ZararTakibi(limit=75.0, miktar=0.01)
     zarar.gun_kontrol()
 
     makro_guncelle(durum)
@@ -419,7 +425,7 @@ def test_analiz_hatti():
     SahteBinance.breakout_modu = True
     for katman in (KISA, UZUN):
         SahteBinance.son_emirler = []
-        analiz_hatti(katman, durum, zarar)
+        analiz_hatti(katman, durum, zarar, kayitci)
         emirler = [t for t, _ in SahteBinance.son_emirler if t != "kaldirac"]
         kontrol(f"{katman.ad} katmanı emre kadar gitti",
                 len(emirler) == 3,
@@ -431,7 +437,7 @@ def test_analiz_hatti():
     SahteBinance.breakout_modu = False
     once = SahteClaude.cagri_sayisi
     SahteBinance.son_emirler = []
-    analiz_hatti(KISA, durum, zarar)
+    analiz_hatti(KISA, durum, zarar, kayitci)
     kontrol("breakout yokken Claude çağrısı yapılmıyor",
             SahteClaude.cagri_sayisi == once and not SahteBinance.son_emirler,
             f"çağrı={SahteClaude.cagri_sayisi - once}")
@@ -441,10 +447,28 @@ def test_analiz_hatti():
     zarar.ekle(100.0, 1_000_000.0)      # limiti kesin aştır
     once = SahteClaude.cagri_sayisi
     SahteBinance.son_emirler = []
-    analiz_hatti(KISA, durum, zarar)
+    analiz_hatti(KISA, durum, zarar, kayitci)
     kontrol("günlük zarar limitinde işlem yapılmıyor",
             zarar.limitte_mi() and SahteClaude.cagri_sayisi == once
             and not SahteBinance.son_emirler)
+
+    # ── Kalıcı kayıt ─────────────────────────────────────────────
+    from datetime import date
+    ist = kayitci.gun_istatistigi(date.today())
+    kontrol("her döngü CSV'ye yazıldı",
+            ist["dongu"] >= 4, f"kayıtlı döngü: {ist['dongu']}")
+    kontrol("emir aşaması kaydedildi",
+            ist["emir"] == 2, f"emir satırı: {ist['emir']}")
+    kontrol("breakout yok aşaması kaydedildi",
+            ist["breakout_yok"] >= 1, f"breakout_yok: {ist['breakout_yok']}")
+
+    # Gün sonu özeti — Telegram sahte, Binance sahte
+    order_agent_modul = sys.modules["agents.order_agent"]
+    order_agent_modul.bakiye_getir = lambda: 1000.0
+    gunluk_ozet_gonder(kayitci, date.today(), 12.5)
+    kontrol("gün sonu bakiyesi kaydedildi",
+            kayitci.onceki_bakiye() == 1000.0,
+            f"kayıtlı bakiye: {kayitci.onceki_bakiye()}")
 
 
 # ══════════════════════════════════════════════════════════════════════

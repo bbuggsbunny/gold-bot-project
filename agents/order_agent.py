@@ -28,6 +28,22 @@ def get_client():
     )
 
 
+def bakiye_getir() -> float:
+    """
+    USDT futures bakiyesi. Alınamazsa -1.0 döner (bot durmaz).
+    Günlük özet bildiriminde gerçek K/Z'yi hesaplamak için kullanılıyor.
+    """
+    try:
+        client = get_client()
+        senkronize_et(client)
+        for varlik in client.futures_account_balance():
+            if varlik.get("asset") == "USDT":
+                return float(varlik.get("balance", 0))
+    except Exception as e:
+        print(f"  [BAKİYE] ⚠️  Alınamadı ({type(e).__name__}): {e}")
+    return -1.0
+
+
 def calistir(karar: Karar, fiyat: float, kaldirac: int) -> EmirSonucu:
     """
     Karar ajanından gelen kararı işle ve Binance'e gönder.
