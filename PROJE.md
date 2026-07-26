@@ -1,6 +1,6 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 26 Temmuz 2026 (rev 4 — git sürüm kontrolü kuruldu)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 5 — canlı akışı bloke eden hatalar düzeltildi)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
 > **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
 
@@ -364,7 +364,7 @@ main.py
 **API:** `python-binance 1.0.36`, testnet=True
 
 **Emir sırası:**
-1. `futures_change_leverage(symbol, leverage)` — kaldıraç ayarla (config.LEVERAGE=5)
+1. `futures_change_leverage(symbol, leverage)` — kaldıraç ayarla (katmana göre: kısa 10x / uzun 3x)
 2. `futures_create_order(MARKET)` — ana emir
 3. `futures_create_order(STOP_MARKET)` — stop-loss
 4. `futures_create_order(TAKE_PROFIT_MARKET)` — take-profit
@@ -1110,8 +1110,9 @@ TESTNET            = os.getenv("TESTNET", "True") == "True"   # varsayılan: Tru
 
 # ── İşlem Ayarları ──────────────────────────────────────────────
 SYMBOL    = "XAUUSDT"   # Binance Futures altın paritesi
-LEVERAGE  = 5           # Genel kaldıraç (order_agent'ta override edilir)
 QUANTITY  = 0.01        # Her emirde kaç oz altın
+# Kaldıraç katmana göre seçilir → KALDIRAC_KISA / KALDIRAC_UZUN
+# (LEVERAGE = 5 sabiti 2026-07-26'da kaldırıldı — bkz. Bölüm 11)
 
 # ── Strateji Eşikleri ────────────────────────────────────────────
 MIN_GUVEN_SKORU = 6     # Bu altında karar → emir yok
@@ -1311,7 +1312,7 @@ git log --oneline
 
 1. `.env` dosyasında `TESTNET=False` yap
 2. `config.py`'de `QUANTITY = 0.01` değerini kontrol et (0.01 oz = ~$45 değer)
-3. `LEVERAGE` değerini düşür (10x → 5x kısa vadeli)
+3. `KALDIRAC_KISA` değerini düşür (10x → 5x veya 3x)
 4. `MIN_GUVEN_SKORU = 7` veya `8` yap (daha seçici)
 5. Gerçek Binance API anahtarı ile `.env` güncelle
 6. İlk gün sadece 1-2 işlem izle, emir doğru gidiyor mu kontrol et
@@ -1349,6 +1350,11 @@ git log --oneline
 | 2026-05-20 | `backtest/ml_veri/ozellik_olustur.py` oluşturuldu | 17 yıllık veriyle ML feature engineering | 5.88M 1dk mum → 396.254 adet 15dk özellik satırı; RSI/MACD/BB/ADX/MA oran/volatilite/ATR + 3 yeni özellik (yön_3, momentum_5, rsi_hiz) + saat/gün; 7 saniye |
 | 2026-05-20 | `backtest/ml_veri/model_egit.py` oluşturuldu | Claude'a bağımlılık azaltma — ilk ML modeli | XGBoost 300 ağaç; 2009-2022 eğitim / 2023-2025 test; balanced×3x BEKLE ağırlığı; prob eşiği=0.40; en önemli özellik: saat (101.3), atr (73.9) |
 | 2026-07-26 | Git sürüm kontrolü kuruldu (`git init -b main`) | Strateji denemeleri (Motor v4 ADX %3 → %1 gibi) arasında geri dönüş/karşılaştırma yoktu; eski kod sürümleri kayboluyordu | Yerel depo, uzak sunucu yok. İlk commit: 28 dosya / 9.598 satır / 516 KB. Git kimliği: Berk \<berkereny@gmail.com\> (global) |
+| 2026-07-26 | **`decision_agent` KeyError düzeltildi ★ KRİTİK** | Bot hiç işlem açamıyordu: prompt kurulurken `teknik_analiz['destek']`/`['direnc']` okunuyordu ama `technical_agent` bu anahtarları döndürmüyor. KeyError en dıştaki `except` tarafından yutulup `{"karar":"BEKLE","guven":0}` oluyordu | Destek/direnç artık veri ajanından okunuyor (kısa: breakout seviyeleri, uzun: BB bantları). Claude'a karar sorusu artık gerçekten gidiyor. Commit `51f0584` |
+| 2026-07-26 | Test fixture'ları gerçek ajan çıktı şekilleriyle hizalandı | Hatanın 2 ay görünmez kalma sebebi: `decision_agent.__main__` testleri canlıda var olmayan anahtarlar içeren uydurma sözlükler kullanıyordu → test geçiyor, canlı çöküyordu | `test_teknik_*` ve `test_analiz_*` artık `data_agent`/`technical_agent` çıktısıyla birebir aynı |
+| 2026-07-26 | Ajan hataları artık loglanıyor | `decision`/`technical`/`risk` ajanlarının `except` blokları hatayı yazmadan güvenli varsayılana dönüyordu (BEKLE / NOTR / ONAY:HAYIR) — bu yüzden kritik hata "bugün sinyal yok" gibi görünüyordu | Üç ajan da hata tipi + mesajı basıyor. `decision_agent`'taki tam prompt dökümü kaldırıldı. Commit `0f7e7a9` |
+| 2026-07-26 | `risk_agent` prompt'unda yanlış config değişkeni | `MAX GÜNLÜK ZARAR: ${MAX_STOP_LOSS_PCT}` yazıyordu → Claude'a limit "$1.0" gidiyordu ($75 yerine) | `MAX_GUNLUK_ZARAR` kullanılıyor, SL limiti ayrı satırda. Commit `18d98bc` |
+| 2026-07-26 | Katman kaldıracı gerçekten uygulanır oldu | `order_agent` her emirde `config.LEVERAGE=5` kullanıyordu; `KALDIRAC_KISA=10`/`KALDIRAC_UZUN=3` sadece risk ajanının prompt metnindeydi. Risk ajanı 10x'e göre değerlendirip emir 5x gidiyordu | `order_agent.calistir()` kaldıracı parametre alıyor; `LEVERAGE` sabiti kaldırıldı. **Davranış değişti:** kısa 10x, uzun 3x. Commit `7d500cf` |
 | 2026-07-26 | `.gitignore` oluşturuldu | 757 MB'lık klasörden sadece kodun takip edilmesi ve `.env` sızıntısının engellenmesi | `.env`, `backtest/veri/` (671 MB), `features.csv` (82 MB), `*.pkl`, `*.png`, `__pycache__`, `haber_gecmis.json` takip dışı. Commit öncesi kodda gömülü API anahtarı taraması yapıldı — temiz |
 
 ---
@@ -1408,6 +1414,33 @@ git log --oneline
 **Tanım:** 30 günlük backtest önbelleği kalıcı JSON'a yazılıyor. Farklı tarih aralığı test edilince eski veriler çakışabilir.
 
 **Önerilen çözüm:** Önbellekte tarihe göre key kullanılıyor (zaten var), sadece eski kayıtları silinmesine gerek yok. Yeni tarihler otomatik ekleniyor.
+
+---
+
+### Sorun 6: Backtest ve canlı bot farklı pozisyon boyutu modeli kullanıyor ★ ÖNEMLİ
+
+**Tanım:** İki sistem aynı stratejiyi tamamen farklı büyüklükte pozisyonlarla test ediyor:
+
+| | Pozisyon büyüklüğü | $1.000 sermayede |
+|---|---|---|
+| Backtest (`motor.py:465`) | `portfoy × kaldirac` — sermayeyle birlikte büyür | 3x → $3.000 nominal |
+| Canlı bot (`config.QUANTITY`) | Sabit 0.01 oz | ~$45 nominal |
+
+**Sonucu:** 17 yıllık backtestin ürettiği CAGR %19,1 ve $1.000 → $19.571 sonucu, canlı botun mevcut ayarlarıyla **ulaşılabilir değil**. Aradaki nominal fark ~66 kat. Canlı bot aynı sinyalleri üretse bile getirisi backtestin çok altında kalır.
+
+**Not:** Futures'ta kaldıraç, sabit miktarlı bir pozisyonun dolar bazlı K/Z'sini değiştirmez — yalnızca gereken teminatı belirler. Yani `QUANTITY=0.01` iken 10x veya 3x kaldıraç arasındaki fark, kâr/zarar değil likidasyon mesafesidir.
+
+**Önerilen çözüm:** Ya canlı bota sermaye-oranlı pozisyon boyutu eklenir (`QUANTITY` yerine `portfoy × risk_yuzdesi / fiyat`), ya da backtest sabit miktar modeline çevrilir. İkisi aynı modeli kullanmadan backtest sonuçları canlı performans için gösterge sayılmamalı.
+
+---
+
+### Sorun 7: Günlük zarar limiti pratikte hiç tetiklenmiyor
+
+**Tanım:** `_zarar_ekle()` her pozisyon için potansiyel SL zararını `QUANTITY × fiyat × SL%` olarak ekliyor: `0.01 × $4.500 × %1 = $0.45`. Limit $75 olduğundan tetiklenmesi için **aynı günde ~167 işlem** açılması gerekir.
+
+**Kök neden:** Hesap doğru; eşik pozisyon boyutuyla uyumsuz. `MAX_GUNLUK_ZARAR = 75` muhtemelen backtestteki sermaye-oranlı modele göre seçilmiş (bkz. Sorun 6).
+
+**Önerilen çözüm:** Sorun 6 çözülürken birlikte ele alınmalı. Sabit miktar korunacaksa limit ~$5'e çekilmeli; sermaye-oranlı modele geçilirse $75 anlamlı hale gelir.
 
 ---
 
