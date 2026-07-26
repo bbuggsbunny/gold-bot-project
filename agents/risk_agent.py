@@ -45,7 +45,8 @@ TEKNİK SİNYAL: {teknik_analiz['sinyal']}
 HABER SENTİMENT: {haberler['sentiment']}
 
 KALDIRAÇ: {kaldirac}x
-MAX GÜNLÜK ZARAR: ${config.MAX_STOP_LOSS_PCT}
+MAX STOP-LOSS: fiyatın %{config.MAX_STOP_LOSS_PCT}'i
+MAX GÜNLÜK ZARAR: ${config.MAX_GUNLUK_ZARAR}
 
 SADECE şu 4 satırı yaz:
 RISK: DUSUK veya ORTA veya YUKSEK veya COK_YUKSEK
