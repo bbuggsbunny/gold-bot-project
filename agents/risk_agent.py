@@ -90,6 +90,7 @@ UYARI: tek cumle turkce
         }
 
     except Exception as e:
+        print(f"  [RİSK] ⚠️  Risk ajanı hatası ({type(e).__name__}): {e} → ONAY:HAYIR")
         return {
             "durum":        "hata",
             "risk":         "COK_YUKSEK",

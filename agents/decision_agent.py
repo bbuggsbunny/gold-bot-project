@@ -137,11 +137,9 @@ take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
         )
 
         ham = response.content[0].text.strip()
-        print(f"[decision_agent] PROMPT:\n{prompt}")
-        print(f"[decision_agent] HAM YANIT: {ham}")
         ham = ham.replace("```json", "").replace("```", "").strip()
         karar = json.loads(ham)
-        print(f"[decision_agent] PARSE SONUÇ: karar={karar.get('karar')} guven={karar.get('guven')}")
+        claude_karari = (karar["karar"], karar["guven"])
 
         # ── 5. Ağırlıklı karar sistemi ───────────────────────────────
         makro_yon  = _yon(makro_skor, "makro")
@@ -170,7 +168,11 @@ take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
                     karar["gerekce"] += (
                         f" [Makro/haber hafif ters ({makro_skor:+.1f}), teknik baskın]"
                     )
-        print(f"[decision_agent] AĞIRLIK SONRASI: karar={karar.get('karar')} guven={karar.get('guven')}")
+        # Ağırlıklandırma Claude'un kararını değiştirdiyse görünür olsun
+        if (karar["karar"], karar["guven"]) != claude_karari:
+            print(f"  [KARAR] Claude: {claude_karari[0]}/{claude_karari[1]} → "
+                  f"ağırlıklı: {karar['karar']}/{karar['guven']} "
+                  f"(makro:{makro_yon} haber:{haber_yon} teknik:{teknik_yon})")
 
         # ── 6. Minimum güven kontrolü ────────────────────────────────
         if karar["guven"] < min_guven:
@@ -182,6 +184,9 @@ take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
         return {"durum": "ok", **karar}
 
     except Exception as e:
+        # Hatayı sessizce BEKLE'ye çevirmek canlı akışı iki ay boyunca
+        # görünmez şekilde bloke etti — artık her zaman log'a düşer.
+        print(f"  [KARAR] ⚠️  Karar ajanı hatası ({type(e).__name__}): {e} → BEKLE")
         return {
             "durum":           "hata",
             "karar":           "BEKLE",

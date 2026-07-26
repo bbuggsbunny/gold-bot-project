@@ -99,6 +99,7 @@ YORUM: tek cumle turkce
         }
 
     except Exception as e:
+        print(f"  [TEKNİK] ⚠️  Teknik ajan hatası ({type(e).__name__}): {e} → NOTR")
         return {
             "durum":  "hata",
             "mod":    teknik.get("mod", "uzun"),
