@@ -5,10 +5,6 @@
 # Uzun vadeli: 15 dakikalık mum + RSI/MACD/BB
 # ─────────────────────────────────────────────
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import time
 import pandas as pd
 from binance.client import Client

@@ -4,10 +4,6 @@
 # Hem kısa hem uzun vadeli veriyle çalışır
 # ─────────────────────────────────────────────
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import config
 import claude_istemci
 from tipler import TeknikVeri, TeknikAnaliz, RiskRaporu, HaberRaporu

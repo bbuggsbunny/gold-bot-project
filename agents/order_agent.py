@@ -5,10 +5,6 @@
 # Güven skoru düşükse veya BEKLE kararıysa hiçbir şey yapmaz.
 # ─────────────────────────────────────────────
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import time
 from binance.client import Client
 from binance.enums import (

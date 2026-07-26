@@ -1,7 +1,3 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import feedparser
 from datetime import datetime, timezone
 import config
@@ -27,7 +23,6 @@ ALTIN_KELIMELER = [
 _son_kontrol: dict[str, datetime] = {}   # feed_url → son kontrol zamanı
 _gorulmus_basliklar: set = set()          # daha önce işlenen başlıklar
 _haber_hafizasi: list = []               # son 10 işlenmiş haber
-
 
 # ──────────────────────────────────────────
 # Yardımcı fonksiyonlar
