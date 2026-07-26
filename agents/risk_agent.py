@@ -10,11 +10,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import anthropic
 import config
-from tipler import TeknikVeri, TeknikAnaliz, RiskRaporu
+from tipler import TeknikVeri, TeknikAnaliz, RiskRaporu, HaberRaporu
 
 
 def calistir(teknik: TeknikVeri, teknik_analiz: TeknikAnaliz,
-             haberler: dict) -> RiskRaporu:
+             haberler: HaberRaporu) -> RiskRaporu:
     try:
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
         mod    = teknik.mod
@@ -44,7 +44,7 @@ FİYAT: {teknik.fiyat} USD
 {ek_bilgi}
 
 TEKNİK SİNYAL: {teknik_analiz.sinyal}
-HABER SENTİMENT: {haberler['sentiment']}
+HABER SENTİMENT: {haberler.sentiment}
 
 KALDIRAÇ: {kaldirac}x
 MAX STOP-LOSS: fiyatın %{config.MAX_STOP_LOSS_PCT}'i

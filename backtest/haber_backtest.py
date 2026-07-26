@@ -143,15 +143,9 @@ def calistir():
     takvim  = takvim_calistir()
     haberler = haber_calistir()
 
-    print(f"  Makro  : {makro['yorum']} (skor: {makro['skor']:+.1f})")
-    print(f"  Takvim : {takvim['mod']}")
-    print(f"  Haber  : {haberler['sentiment']} | {haberler['ozet'][:70]}...")
-
-    # haberler'e makro/takvim özeti göm (decision_agent için)
-    haberler["makro_skor"]       = makro["skor"]
-    haberler["makro_yorum"]      = makro["yorum"]
-    haberler["takvim_mod"]       = takvim["mod"]
-    haberler["yaklasan_olaylar"] = takvim.get("yaklasan_olaylar", [])
+    print(f"  Makro  : {makro.yorum} (skor: {makro.skor:+.1f})")
+    print(f"  Takvim : {takvim.mod}")
+    print(f"  Haber  : {haberler.sentiment} | {haberler.ozet[:70]}...")
 
     # 3. Her mum için karar
     print(f"\n[3/4] {TEST_MUMLAR} mum analiz ediliyor...\n")
@@ -199,9 +193,9 @@ def calistir():
     print("  ÖZET RAPOR")
     print("═" * 60)
     print(f"\n  Bağlam Durumu:")
-    print(f"    Makro Skoru : {makro['skor']:+.1f}  →  {makro['yorum']}")
-    print(f"    Takvim Modu : {takvim['mod']}")
-    print(f"    Haber       : {haberler['sentiment']}  —  {haberler['ozet'][:60]}...")
+    print(f"    Makro Skoru : {makro.skor:+.1f}  →  {makro.yorum}")
+    print(f"    Takvim Modu : {takvim.mod}")
+    print(f"    Haber       : {haberler.sentiment}  —  {haberler.ozet[:60]}...")
 
     print(f"\n  Karar Dağılımı ({TEST_MUMLAR} mum):")
     print(f"    AL    : {kararlar['AL']}")

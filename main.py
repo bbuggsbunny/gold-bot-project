@@ -19,6 +19,7 @@ from agents import data_agent, news_agent, technical_agent, risk_agent, decision
 from agents.telegram_agent import bildir_sinyal, bildir_emir, bildir_hata, bildir_durum
 from agents.macro_agent import calistir as macro_calistir
 from agents.calendar_agent import calistir as takvim_calistir
+from tipler import HaberRaporu, MakroRaporu, TakvimRaporu
 import config
 
 # ──────────────────────────────────────────────────────────
@@ -83,33 +84,13 @@ def _zarar_ekle(stop_loss_pct: float, fiyat: float):
 # ──────────────────────────────────────────────────────────
 # Paylaşılan durum değişkenleri
 # ──────────────────────────────────────────────────────────
-son_haber_raporu = {
-    "sentiment": "NOTR",
-    "haber_skoru": 0.0,
-    "ozet": "Henüz haber analizi yapılmadı.",
-    "etkenler": [],
-    "son_haberler": [],
-}
+son_haber_raporu = HaberRaporu(ozet="Henüz haber analizi yapılmadı.")
 haber_kilidi = threading.Lock()
 
-son_makro_raporu = {
-    "durum": "ok",
-    "skor": 0,
-    "yorum": "NOTR",
-    "dxy_degisim": 0.0,
-    "vix_degisim": 0.0,
-    "tnx_degisim": 0.0,
-    "sp500_degisim": 0.0,
-    "detay": {},
-}
+son_makro_raporu = MakroRaporu()
 makro_kilidi = threading.Lock()
 
-son_takvim_raporu = {
-    "durum": "ok",
-    "mod": "NORMAL",
-    "yaklasan_olaylar": [],
-    "aciklanan_olaylar": [],
-}
+son_takvim_raporu = TakvimRaporu()
 takvim_kilidi = threading.Lock()
 
 
@@ -122,24 +103,25 @@ def haber_guncelle():
     rapor = news_agent.calistir()
     with haber_kilidi:
         son_haber_raporu = rapor
-    print(f"  [HABER] Sentiment: {rapor['sentiment']} | Skor: {rapor.get('haber_skoru', 0):.1f}")
+    print(f"  [HABER] Sentiment: {rapor.sentiment} | Skor: {rapor.haber_skoru:.1f}")
 
 
 def makro_guncelle():
     global son_makro_raporu
     print("\n  [MAKRO] DXY/VIX/TNX/SP500 güncelleniyor...")
     rapor = macro_calistir()
-    if rapor["durum"] != "ok":
-        print(f"  [MAKRO] Hata: {rapor.get('mesaj', '?')}")
+    if not rapor.basarili:
+        print(f"  [MAKRO] Hata: {rapor.mesaj}")
         return
 
-    onceki_skor = son_makro_raporu["skor"]
+    onceki_skor = son_makro_raporu.skor
     with makro_kilidi:
         son_makro_raporu = rapor
 
-    skor  = rapor["skor"]
-    yorum = rapor["yorum"]
-    print(f"  [MAKRO] Skor: {skor:+.1f} | {yorum} | DXY:{rapor['dxy_degisim']:+.2f}% VIX:{rapor['vix_degisim']:+.2f}%")
+    skor  = rapor.skor
+    yorum = rapor.yorum
+    print(f"  [MAKRO] Skor: {skor:+.1f} | {yorum} | "
+          f"DXY:{rapor.dxy_degisim:+.2f}% VIX:{rapor.vix_degisim:+.2f}%")
 
     # Skor anlamlı ölçüde değiştiyse Telegram'a bildir
     if abs(skor - onceki_skor) >= 3:
@@ -147,8 +129,8 @@ def makro_guncelle():
         bildir_durum(
             f"{emoji} <b>Makro Güncelleme</b>\n"
             f"Skor: {onceki_skor:+.1f} → {skor:+.1f} | {yorum}\n"
-            f"DXY:{rapor['dxy_degisim']:+.2f}%  VIX:{rapor['vix_degisim']:+.2f}%  "
-            f"TNX:{rapor['tnx_degisim']:+.2f}%  SP500:{rapor['sp500_degisim']:+.2f}%"
+            f"DXY:{rapor.dxy_degisim:+.2f}%  VIX:{rapor.vix_degisim:+.2f}%  "
+            f"TNX:{rapor.tnx_degisim:+.2f}%  SP500:{rapor.sp500_degisim:+.2f}%"
         )
 
 
@@ -157,19 +139,19 @@ def takvim_guncelle():
     print("\n  [TAKVİM] Ekonomik takvim kontrol ediliyor...")
     rapor = takvim_calistir()
 
-    onceki_mod = son_takvim_raporu["mod"]
+    onceki_mod = son_takvim_raporu.mod
     with takvim_kilidi:
         son_takvim_raporu = rapor
 
-    mod = rapor["mod"]
-    print(f"  [TAKVİM] Mod: {mod} | Yaklaşan: {len(rapor['yaklasan_olaylar'])} olay")
+    mod = rapor.mod
+    print(f"  [TAKVİM] Mod: {mod} | Yaklaşan: {len(rapor.yaklasan_olaylar)} olay")
 
     # Mod kötüleştiyse Telegram uyarısı gönder
     sirali = ["NORMAL", "DIKKATLI", "YUKSEK_RISK"]
     if sirali.index(mod) > sirali.index(onceki_mod):
         yaklashan_str = ""
-        for o in rapor["yaklasan_olaylar"][:3]:
-            yaklashan_str += f"\n  • {o['isim']} ({o['saat_sonra']:.1f} saat sonra, etki:{o['etki']})"
+        for o in rapor.yaklasan_olaylar[:3]:
+            yaklashan_str += f"\n  • {o.isim} ({o.saat_sonra:.1f} saat sonra, etki:{o.etki})"
         bildir_durum(
             f"⚠️ <b>Takvim Uyarısı: {mod}</b>{yaklashan_str}"
         )
@@ -178,21 +160,20 @@ def takvim_guncelle():
 # ──────────────────────────────────────────────────────────
 # Ortak bağlam oluşturucu
 # ──────────────────────────────────────────────────────────
-def _baglam_olustur() -> tuple:
-    """Haberler, makro ve takvim verilerini okur.
-    Dönüş: (haberler, makro, takvim) — üçü ayrı ayrı decision_agent'a iletilir."""
-    with haber_kilidi:
-        haberler = son_haber_raporu.copy()
-    with makro_kilidi:
-        makro = son_makro_raporu.copy()
-    with takvim_kilidi:
-        takvim = son_takvim_raporu.copy()
+def _baglam_olustur() -> tuple[HaberRaporu, MakroRaporu, TakvimRaporu]:
+    """
+    Üç bağlam raporunun o anki halini kilitli okur.
 
-    # Loglama kolaylığı için haberler'e özet bilgi göm
-    haberler["makro_skor"]       = makro["skor"]
-    haberler["makro_yorum"]      = makro["yorum"]
-    haberler["takvim_mod"]       = takvim["mod"]
-    haberler["yaklasan_olaylar"] = takvim.get("yaklasan_olaylar", [])
+    Raporlar hiç yerinde değiştirilmiyor — güncelleme fonksiyonları her
+    seferinde yeni bir nesne atıyor. Bu yüzden kilit altında referansı
+    okumak yeterli, kopyalamaya gerek yok.
+    """
+    with haber_kilidi:
+        haberler = son_haber_raporu
+    with makro_kilidi:
+        makro = son_makro_raporu
+    with takvim_kilidi:
+        takvim = son_takvim_raporu
     return haberler, makro, takvim
 
 
@@ -211,7 +192,7 @@ def kisa_vadeli_dongu():
 
     # Takvim modu kontrolü
     with takvim_kilidi:
-        takvim_mod = son_takvim_raporu["mod"]
+        takvim_mod = son_takvim_raporu.mod
 
     if takvim_mod == "YUKSEK_RISK":
         print(f"  [KISA] ⛔ Ekonomik veri bekleniyor — işlem yok.")
@@ -236,15 +217,16 @@ def kisa_vadeli_dongu():
     print(f"  [KISA] Sinyal: {teknik_analiz.sinyal} | {teknik_analiz.yorum[:60]}")
 
     # Makro + haber + takvim bağlamını oku
-    baglam, makro, takvim = _baglam_olustur()
-    print(f"  [KISA] Makro: {baglam['makro_yorum']} ({baglam['makro_skor']:+.1f})")
+    haberler, makro, takvim = _baglam_olustur()
+    print(f"  [KISA] Makro: {makro.yorum} ({makro.skor:+.1f})")
 
     # Risk değerlendirmesi
-    risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
+    risk = risk_agent.calistir(teknik, teknik_analiz, haberler)
     print(f"  [KISA] Risk: {risk.risk} | Onay: {risk.onay}")
 
     # Karar
-    karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk, makro=makro, takvim=takvim)
+    karar = decision_agent.calistir(teknik, haberler, teknik_analiz, risk,
+                                    makro=makro, takvim=takvim)
     print(f"  [KISA] Karar: {karar.eylem} | Güven: {karar.guven}/10")
 
     # Emir
@@ -275,7 +257,7 @@ def uzun_vadeli_dongu(haber_guncelle_de=False):
 
     # Takvim modu kontrolü
     with takvim_kilidi:
-        takvim_mod = son_takvim_raporu["mod"]
+        takvim_mod = son_takvim_raporu.mod
 
     if takvim_mod == "YUKSEK_RISK":
         print(f"  [UZUN] ⛔ Ekonomik veri bekleniyor — işlem yok.")
@@ -296,15 +278,16 @@ def uzun_vadeli_dongu(haber_guncelle_de=False):
     print(f"  [UZUN] Sinyal: {teknik_analiz.sinyal} | {teknik_analiz.yorum[:60]}")
 
     # Makro + haber + takvim bağlamını oku
-    baglam, makro, takvim = _baglam_olustur()
-    print(f"  [UZUN] Makro: {baglam['makro_yorum']} ({baglam['makro_skor']:+.1f}) | Takvim: {takvim_mod}")
+    haberler, makro, takvim = _baglam_olustur()
+    print(f"  [UZUN] Makro: {makro.yorum} ({makro.skor:+.1f}) | Takvim: {takvim_mod}")
 
     # Risk
-    risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
+    risk = risk_agent.calistir(teknik, teknik_analiz, haberler)
     print(f"  [UZUN] Risk: {risk.risk} | Onay: {risk.onay}")
 
     # Karar
-    karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk, makro=makro, takvim=takvim)
+    karar = decision_agent.calistir(teknik, haberler, teknik_analiz, risk,
+                                    makro=makro, takvim=takvim)
     print(f"  [UZUN] Karar: {karar.eylem} | Güven: {karar.guven}/10")
 
     # Emir

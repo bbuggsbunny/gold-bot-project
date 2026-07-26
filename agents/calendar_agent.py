@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 import re
 
+from tipler import Olay, TakvimRaporu
+
 # ──────────────────────────────────────────
 # Anahtar kelime → etki skoru
 # ──────────────────────────────────────────
@@ -93,32 +95,32 @@ def _takvim_cek(date_from: str, date_to: str) -> list:
     return olaylar
 
 
-def _mod_belirle(yaklasan: list, aciklanan: list) -> str:
+def _mod_belirle(yaklasan: list[Olay], aciklanan: list[Olay]) -> str:
     """
     YUKSEK_RISK: etki 8+ ve 2 saat içinde / son 30dk içinde
     DIKKATLI   : etki 7+ ve 4 saat içinde / son 1 saat içinde
     NORMAL     : diğer
     """
     for olay in yaklasan:
-        if olay["etki"] >= 8 and olay["saat_sonra"] <= 2:
+        if olay.etki >= 8 and olay.saat_sonra <= 2:
             return "YUKSEK_RISK"
 
     for olay in aciklanan:
-        if olay["etki"] >= 8 and olay["saat_once"] <= 0.5:
+        if olay.etki >= 8 and olay.saat_once <= 0.5:
             return "YUKSEK_RISK"
 
     for olay in yaklasan:
-        if olay["etki"] >= 7 and olay["saat_sonra"] <= 4:
+        if olay.etki >= 7 and olay.saat_sonra <= 4:
             return "DIKKATLI"
 
     for olay in aciklanan:
-        if olay["etki"] >= 7 and olay["saat_once"] <= 1:
+        if olay.etki >= 7 and olay.saat_once <= 1:
             return "DIKKATLI"
 
     return "NORMAL"
 
 
-def calistir() -> dict:
+def calistir() -> TakvimRaporu:
     simdi = datetime.now(timezone.utc).replace(tzinfo=None)
     bugun  = simdi.strftime("%Y-%m-%d")
     yarin  = (simdi + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -126,13 +128,8 @@ def calistir() -> dict:
     try:
         olaylar = _takvim_cek(bugun, yarin)
     except Exception as e:
-        return {
-            "durum": "hata",
-            "mod":   "NORMAL",
-            "yaklasan_olaylar":  [],
-            "aciklanan_olaylar": [],
-            "mesaj": str(e),
-        }
+        print(f"  [TAKVİM] ⚠️  Takvim ajanı hatası ({type(e).__name__}): {e} → NORMAL")
+        return TakvimRaporu.hata(e)
 
     yaklasan  = []
     aciklanan = []
@@ -145,36 +142,26 @@ def calistir() -> dict:
         fark_saat = (olay["zaman"] - simdi).total_seconds() / 3600
 
         if fark_saat >= 0:
-            yaklasan.append({
-                "isim":      olay["isim"],
-                "etki":      etki,
-                "saat_sonra": round(fark_saat, 2),
-            })
+            yaklasan.append(Olay(isim=olay["isim"], etki=etki,
+                                 saat_sonra=round(fark_saat, 2)))
         else:
             # Geçmiş — son 2 saat içinde açıklananlar
             gecen = abs(fark_saat)
             if gecen <= 2:
-                aciklanan.append({
-                    "isim":      olay["isim"],
-                    "etki":      etki,
-                    "saat_once": round(gecen, 2),
-                })
+                aciklanan.append(Olay(isim=olay["isim"], etki=etki,
+                                      saat_once=round(gecen, 2)))
 
     # Yaklaşan olayları zamana göre sırala
-    yaklasan.sort(key=lambda x: x["saat_sonra"])
+    yaklasan.sort(key=lambda o: o.saat_sonra)
 
-    mod = _mod_belirle(yaklasan, aciklanan)
-
-    return {
-        "durum":             "ok",
-        "mod":               mod,
-        "yaklasan_olaylar":  yaklasan,
-        "aciklanan_olaylar": aciklanan,
-    }
+    return TakvimRaporu(
+        mod=_mod_belirle(yaklasan, aciklanan),
+        yaklasan_olaylar=yaklasan,
+        aciklanan_olaylar=aciklanan,
+    )
 
 
 if __name__ == "__main__":
     import json
     print("=== EKONOMİK TAKVİM AJANI ===")
-    sonuc = calistir()
-    print(json.dumps(sonuc, indent=2, ensure_ascii=False))
+    print(json.dumps(calistir().sozluk(), indent=2, ensure_ascii=False))

@@ -3,6 +3,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import yfinance as yf
+from tipler import MakroRaporu
 
 
 SEMBOLLER = {
@@ -70,7 +71,7 @@ def _yorumla(skor: float) -> str:
         return "GUCLU_BEARISH"
 
 
-def calistir() -> dict:
+def calistir() -> MakroRaporu:
     try:
         dxy_gun,   dxy_onc   = _veri_cek(SEMBOLLER["dxy"])
         vix_gun,   vix_onc   = _veri_cek(SEMBOLLER["vix"])
@@ -89,33 +90,27 @@ def calistir() -> dict:
 
         skor = round(dxy_p + vix_p + tnx_p + sp500_p, 2)
 
-        return {
-            "durum":         "ok",
-            "skor":          skor,
-            "yorum":         _yorumla(skor),
-            "dxy_degisim":   dxy_d,
-            "vix_degisim":   vix_d,
-            "tnx_degisim":   tnx_d,
-            "sp500_degisim": sp500_d,
-            "detay": {
+        return MakroRaporu(
+            skor=skor,
+            yorum=_yorumla(skor),
+            dxy_degisim=dxy_d,
+            vix_degisim=vix_d,
+            tnx_degisim=tnx_d,
+            sp500_degisim=sp500_d,
+            detay={
                 "dxy_puan":   dxy_p,
                 "vix_puan":   vix_p,
                 "tnx_puan":   tnx_p,
                 "sp500_puan": sp500_p,
-            }
-        }
+            },
+        )
 
     except Exception as e:
-        return {
-            "durum":  "hata",
-            "skor":   0,
-            "yorum":  "NOTR",
-            "mesaj":  str(e),
-        }
+        print(f"  [MAKRO] ⚠️  Makro ajanı hatası ({type(e).__name__}): {e} → skor 0")
+        return MakroRaporu.hata(e)
 
 
 if __name__ == "__main__":
     import json
     print("=== MAKRO AJAN ===")
-    sonuc = calistir()
-    print(json.dumps(sonuc, indent=2, ensure_ascii=False))
+    print(json.dumps(calistir().sozluk(), indent=2, ensure_ascii=False))

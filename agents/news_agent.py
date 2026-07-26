@@ -6,6 +6,7 @@ import feedparser
 import anthropic
 from datetime import datetime, timezone
 import config
+from tipler import HaberRaporu
 from agents import finbert_agent
 
 # ──────────────────────────────────────────
@@ -247,7 +248,7 @@ def _ozet_sentiment() -> str:
 # ──────────────────────────────────────────
 # Ana fonksiyon (mevcut arayüz korundu)
 # ──────────────────────────────────────────
-def calistir() -> dict:
+def calistir() -> HaberRaporu:
     try:
         # RSS'ten yeni haberleri çek
         rss_kontrol()
@@ -255,15 +256,14 @@ def calistir() -> dict:
         # RSS sonuçlarına göre veri varsa onları kullan
         if _haber_hafizasi:
             son_haber = _haber_hafizasi[-1]
-            return {
-                "durum":        "ok",
-                "sentiment":    _ozet_sentiment(),
-                "haber_skoru":  _agirlikli_skor(),
-                "etki":         son_haber["etki"],
-                "kategori":     son_haber["kategori"],
-                "ozet":         son_haber["ozet"],
-                "son_haberler": _haber_hafizasi[-3:],
-            }
+            return HaberRaporu(
+                sentiment=_ozet_sentiment(),
+                haber_skoru=_agirlikli_skor(),
+                etki=son_haber["etki"],
+                kategori=son_haber["kategori"],
+                ozet=son_haber["ozet"],
+                son_haberler=_haber_hafizasi[-3:],
+            )
 
         # RSS'te yeni haber yoksa genel web araması yap (orijinal davranış)
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
@@ -309,30 +309,15 @@ def calistir() -> dict:
             elif satir.startswith("ETKENLER:"):
                 etkenler = [e.strip() for e in satir.replace("ETKENLER:", "").strip().split(",")]
 
-        return {
-            "durum":        "ok",
-            "sentiment":    sentiment,
-            "haber_skoru":  0.0,
-            "etki":         5,
-            "kategori":     "DIGER",
-            "ozet":         ozet,
-            "son_haberler": [],
-            # geriye uyumluluk
-            "etkenler":     etkenler,
-            "ham_yanit":    tam_yanit,
-        }
+        return HaberRaporu(
+            sentiment=sentiment,
+            etki=5,
+            ozet=ozet,
+        )
 
     except Exception as e:
-        return {
-            "durum":        "hata",
-            "sentiment":    "NOTR",
-            "haber_skoru":  0.0,
-            "etki":         0,
-            "kategori":     "DIGER",
-            "ozet":         "Haber verisi alinamadi.",
-            "son_haberler": [],
-            "mesaj":        str(e),
-        }
+        print(f"  [HABER] ⚠️  Haber ajanı hatası ({type(e).__name__}): {e} → NOTR")
+        return HaberRaporu.hata(e)
 
 
 if __name__ == "__main__":
@@ -345,5 +330,4 @@ if __name__ == "__main__":
         print(f"  [{h['sentiment']} | etki:{h['etki']} | ağırlıklı:{h['agirlikli_etki']}] {h['baslik'][:70]}")
 
     print("\n=== HABER AJANI calistir() ===")
-    sonuc = calistir()
-    print(json.dumps(sonuc, indent=2, ensure_ascii=False, default=str))
+    print(json.dumps(calistir().sozluk(), indent=2, ensure_ascii=False, default=str))

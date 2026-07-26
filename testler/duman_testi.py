@@ -32,7 +32,7 @@ import time
 
 # ══════════════════════════════════════════════════════════════════════
 # 1. SÖZLEŞMELER — her ajanın döndürmek zorunda olduğu anahtarlar
-#    (1. adımda bu tablo tipler.py'deki dataclass'lara dönüşecek)
+#    (tipler.py bu tablonun dataclass karşılığı — burada ikinci bir göz olarak kalıyor)
 # ══════════════════════════════════════════════════════════════════════
 SOZLESMELER = {
     "data_agent.kisa_vadeli_veri": {
@@ -196,7 +196,9 @@ def sahte_kurulum():
     # investing.com (takvim) — olay yok → NORMAL mod
     calendar_agent._takvim_cek = lambda bas, bit: []
 
-    # RSS + FinBERT — hafızaya tek haber koy, Claude'a düşmesin
+    # RSS + FinBERT — hafızaya tek haber koy, Claude'a düşmesin.
+    # Hafıza içindeki haberler ham sözlük olarak kalır (son_haberler alanı),
+    # HaberRaporu bunları olduğu gibi taşır.
     news_agent._haber_hafizasi = [{
         "baslik": "Gold rises as dollar weakens",
         "zaman": "2026-07-26T10:00:00+00:00",
@@ -261,17 +263,17 @@ def test_baglam_ajanlari():
 
     makro = macro_agent.calistir()
     sozlesme_kontrol("macro_agent.calistir", makro)
-    kontrol("makro durum=ok", makro["durum"] == "ok", makro.get("mesaj", ""))
+    kontrol("makro durum=ok", makro.basarili, makro.mesaj)
 
     takvim = calendar_agent.calistir()
     sozlesme_kontrol("calendar_agent.calistir", takvim)
     kontrol("takvim modu geçerli",
-            takvim["mod"] in ("NORMAL", "DIKKATLI", "YUKSEK_RISK"),
-            f"mod={takvim.get('mod')}")
+            takvim.mod in ("NORMAL", "DIKKATLI", "YUKSEK_RISK"),
+            f"mod={takvim.mod}")
 
     haber = news_agent.calistir()
     sozlesme_kontrol("news_agent.calistir", haber)
-    kontrol("haber durum=ok", haber["durum"] == "ok", haber.get("mesaj", ""))
+    kontrol("haber durum=ok", haber.basarili, haber.mesaj)
     return makro, takvim, haber
 
 
@@ -291,18 +293,11 @@ def test_hat(kisa, uzun, makro, takvim, haber):
         kontrol(f"{etiket}: teknik ajan durum=ok",
                 teknik_analiz.basarili, teknik_analiz.mesaj)
 
-        # main.py'nin bağlam sözlüğü (haberler + makro/takvim özeti)
-        baglam = dict(haber)
-        baglam["makro_skor"]       = makro["skor"]
-        baglam["makro_yorum"]      = makro["yorum"]
-        baglam["takvim_mod"]       = takvim["mod"]
-        baglam["yaklasan_olaylar"] = takvim["yaklasan_olaylar"]
-
-        risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
+        risk = risk_agent.calistir(teknik, teknik_analiz, haber)
         sozlesme_kontrol("risk_agent.calistir", risk)
         kontrol(f"{etiket}: risk ajanı durum=ok", risk.basarili, risk.mesaj)
 
-        karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk,
+        karar = decision_agent.calistir(teknik, haber, teknik_analiz, risk,
                                         makro=makro, takvim=takvim)
         sozlesme_kontrol("decision_agent.calistir", karar)
         kontrol(f"{etiket}: karar ajanı durum=ok", karar.basarili, karar.mesaj)
@@ -357,19 +352,19 @@ def test_emir(hat_sonuclari):
 def test_koruma_katmanlari():
     """Takvim ve risk ajanı engelleri Claude'a sormadan BEKLE üretmeli."""
     from agents import decision_agent
-    from tipler import KisaVeri, TeknikAnaliz, RiskRaporu
+    from tipler import KisaVeri, TeknikAnaliz, RiskRaporu, HaberRaporu, TakvimRaporu
     print("\n[5] koruma katmanları")
 
     teknik = KisaVeri(fiyat=4500.0, destek=4480.0, direnc=4520.0)
     analiz = TeknikAnaliz(mod="kisa", sinyal="GUCLU_AL", sl=4480.0,
                           tp=4560.0, yorum="-")
-    haber  = {"sentiment": "BULLISH", "ozet": "-"}
+    haber  = HaberRaporu(sentiment="BULLISH", ozet="-")
     risk_e = RiskRaporu(risk="ORTA", onay="EVET", max_pozisyon=0.01, uyari="-")
     risk_h = RiskRaporu(risk="YUKSEK", onay="HAYIR", uyari="volatilite yüksek")
 
     once = SahteClaude.cagri_sayisi
     k = decision_agent.calistir(teknik, haber, analiz, risk_e,
-                                takvim={"mod": "YUKSEK_RISK", "yaklasan_olaylar": []})
+                                takvim=TakvimRaporu(mod="YUKSEK_RISK"))
     kontrol("YUKSEK_RISK takvimde BEKLE + Claude çağrısı yok",
             k.eylem == "BEKLE" and SahteClaude.cagri_sayisi == once,
             f"karar={k.eylem}, çağrı={SahteClaude.cagri_sayisi - once}")

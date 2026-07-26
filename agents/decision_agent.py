@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import anthropic
 import json
 import config
-from tipler import TeknikVeri, KisaVeri, UzunVeri, TeknikAnaliz, RiskRaporu, Karar
+from tipler import (TeknikVeri, KisaVeri, UzunVeri, TeknikAnaliz, RiskRaporu,
+                    Karar, HaberRaporu, MakroRaporu, TakvimRaporu)
 
 
 def _yon(deger: str | float, tip: str) -> str:
@@ -31,15 +32,15 @@ def _yon(deger: str | float, tip: str) -> str:
 
 def calistir(
     teknik: TeknikVeri,
-    haberler: dict,
+    haberler: HaberRaporu,
     teknik_analiz: TeknikAnaliz,
     risk: RiskRaporu,
-    makro: dict | None = None,
-    takvim: dict | None = None,
+    makro: MakroRaporu | None = None,
+    takvim: TakvimRaporu | None = None,
 ) -> Karar:
     try:
         # ── 1. Takvim koruması (Claude'a sormadan) ──────────────────
-        takvim_mod = takvim.get("mod", "NORMAL") if takvim else "NORMAL"
+        takvim_mod = takvim.mod if takvim else "NORMAL"
 
         if takvim_mod == "YUKSEK_RISK":
             return Karar(
@@ -60,7 +61,7 @@ def calistir(
             )
 
         # ── 3. Makro özeti ───────────────────────────────────────────
-        makro_skor = makro["skor"] if makro else 0
+        makro_skor = makro.skor if makro else 0
         if makro_skor > 8:
             makro_mesaj = "Makro güçlü BULLISH (DXY zayıf, VIX yüksek, SP500 düşük)"
         elif makro_skor > 3:
@@ -85,12 +86,12 @@ def calistir(
 
         takvim_ozet = ""
         if takvim_mod == "DIKKATLI":
-            yaklasan = takvim.get("yaklasan_olaylar", []) if takvim else []
+            yaklasan = takvim.yaklasan_olaylar if takvim else []
             if yaklasan:
                 en_yakin = yaklasan[0]
                 takvim_ozet = (
-                    f"\nDİKKAT: {en_yakin['isim']} — "
-                    f"{en_yakin['saat_sonra']:.1f} saat sonra (etki:{en_yakin['etki']})"
+                    f"\nDİKKAT: {en_yakin.isim} — "
+                    f"{en_yakin.saat_sonra:.1f} saat sonra (etki:{en_yakin.etki})"
                 )
 
         # ── 4. Claude prompt ─────────────────────────────────────────
@@ -102,8 +103,8 @@ FİYAT: {teknik.fiyat} USD
 MAKRO DURUM: {makro_mesaj}{takvim_ozet}
 
 HABER ANALİSTİ RAPORU:
-- Sentiment: {haberler['sentiment']}
-- Özet: {haberler['ozet']}
+- Sentiment: {haberler.sentiment}
+- Özet: {haberler.ozet}
 
 TEKNİK ANALİST RAPORU:
 - Sinyal: {teknik_analiz.sinyal}{seviyeler}
@@ -147,7 +148,7 @@ take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
 
         # ── 5. Ağırlıklı karar sistemi ───────────────────────────────
         makro_yon  = _yon(makro_skor, "makro")
-        haber_yon  = _yon(haberler.get("sentiment", "NOTR"), "sentiment")
+        haber_yon  = _yon(haberler.sentiment, "sentiment")
         teknik_yon = _yon(teknik_analiz.sinyal, "teknik")
 
         makro_haber_ayni = (makro_yon == haber_yon and makro_yon != "NOTR")
@@ -203,7 +204,8 @@ if __name__ == "__main__":
     kod burada TypeError verir, sessizce geçip canlıda patlamaz.
     Hattın tamamı için: python3 testler/duman_testi.py
     """
-    from tipler import KisaVeri, UzunVeri, TeknikAnaliz, RiskRaporu
+    from tipler import (KisaVeri, UzunVeri, TeknikAnaliz, RiskRaporu,
+                        HaberRaporu, MakroRaporu, TakvimRaporu, Olay)
 
     teknik_breakout = KisaVeri(
         fiyat=3350.00, degisim_pct=0.42, yuksek=3352.0, dusuk=3344.0,
@@ -229,12 +231,13 @@ if __name__ == "__main__":
     risk_evet = RiskRaporu(risk="ORTA", onay="EVET", max_pozisyon=0.01,
                            uyari="Kaldıraç düşük tutulmalı.")
 
-    haber_bearish       = {"sentiment": "BEARISH",
-                           "ozet": "Fed faiz artırımı beklentisi altını baskılıyor."}
-    makro_zayif_bearish = {"skor": -4.5,  "yorum": "Hafif bearish"}
-    makro_guclu_bearish = {"skor": -10.5, "yorum": "Güçlü bearish"}
-    takvim_dikkatli     = {"mod": "DIKKATLI", "yaklasan_olaylar": [
-        {"isim": "CPI Release", "etki": 9, "saat_sonra": 2.5}]}
+    haber_bearish       = HaberRaporu(
+        sentiment="BEARISH",
+        ozet="Fed faiz artırımı beklentisi altını baskılıyor.")
+    makro_zayif_bearish = MakroRaporu(skor=-4.5,  yorum="ZAYIF_BEARISH")
+    makro_guclu_bearish = MakroRaporu(skor=-10.5, yorum="BEARISH")
+    takvim_dikkatli     = TakvimRaporu(mod="DIKKATLI", yaklasan_olaylar=[
+        Olay(isim="CPI Release", etki=9, saat_sonra=2.5)])
 
     def _yaz(baslik: str, beklenti: str, sonuc: Karar):
         print("\n" + "=" * 62)
@@ -265,4 +268,4 @@ if __name__ == "__main__":
     _yaz("TEST 5: Takvim YUKSEK_RISK",
          "Claude'a sorulmadan BEKLE",
          calistir(teknik_uzun, haber_bearish, analiz_zayif_sat, risk_evet,
-                  takvim={"mod": "YUKSEK_RISK", "yaklasan_olaylar": []}))
+                  takvim=TakvimRaporu(mod="YUKSEK_RISK")))
