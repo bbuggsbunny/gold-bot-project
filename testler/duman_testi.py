@@ -48,7 +48,10 @@ SOZLESMELER = {
     "technical_agent.calistir": {"durum", "mod", "sinyal", "sl", "tp", "yorum"},
     "risk_agent.calistir": {"durum", "risk", "onay", "max_pozisyon", "uyari"},
     "decision_agent.calistir": {
-        "durum", "karar", "guven", "stop_loss_pct", "take_profit_pct", "gerekce",
+        "durum", "eylem", "guven", "stop_loss_pct", "take_profit_pct", "gerekce",
+    },
+    "order_agent.calistir": {
+        "durum", "islem", "fiyat", "stop_loss", "take_profit", "emir_id",
     },
     "macro_agent.calistir": {
         "durum", "skor", "yorum", "dxy_degisim", "vix_degisim",
@@ -216,13 +219,20 @@ def kontrol(ad: str, kosul: bool, detay: str = ""):
     print(f"  {isaret} {ad}" + (f"\n      → {detay}" if detay and not kosul else ""))
 
 
-def sozlesme_kontrol(ad: str, sonuc: dict):
-    """Ajan çıktısının ilan ettiği anahtarları içerdiğini doğrular."""
+def _alanlar(sonuc) -> set:
+    """Dataclass (tipler.py) ya da düz sözlük — ikisinden de alan adlarını çıkarır."""
+    if hasattr(sonuc, "sozluk"):
+        return set(sonuc.sozluk().keys())
+    return set(sonuc.keys())
+
+
+def sozlesme_kontrol(ad: str, sonuc):
+    """Ajan çıktısının ilan ettiği alanları içerdiğini doğrular."""
     beklenen = SOZLESMELER[ad]
-    eksik = beklenen - set(sonuc.keys())
+    eksik = beklenen - _alanlar(sonuc)
     kontrol(f"{ad} sözleşmesi",
             not eksik,
-            f"eksik anahtar: {sorted(eksik)}")
+            f"eksik alan: {sorted(eksik)}")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -235,13 +245,13 @@ def test_veri_ajani():
     SahteBinance.breakout_modu = True
     kisa = data_agent.kisa_vadeli_veri()
     sozlesme_kontrol("data_agent.kisa_vadeli_veri", kisa)
-    kontrol("kısa veri durum=ok", kisa["durum"] == "ok", kisa.get("mesaj", ""))
-    kontrol("breakout tespit edildi", kisa.get("breakout") == "YUKARI",
-            f"breakout={kisa.get('breakout')}")
+    kontrol("kısa veri durum=ok", kisa.basarili, kisa.mesaj)
+    kontrol("breakout tespit edildi", kisa.breakout == "YUKARI",
+            f"breakout={kisa.breakout}")
 
     uzun = data_agent.uzun_vadeli_veri()
     sozlesme_kontrol("data_agent.uzun_vadeli_veri", uzun)
-    kontrol("uzun veri durum=ok", uzun["durum"] == "ok", uzun.get("mesaj", ""))
+    kontrol("uzun veri durum=ok", uzun.basarili, uzun.mesaj)
     return kisa, uzun
 
 
@@ -279,7 +289,7 @@ def test_hat(kisa, uzun, makro, takvim, haber):
         teknik_analiz = technical_agent.calistir(teknik)
         sozlesme_kontrol("technical_agent.calistir", teknik_analiz)
         kontrol(f"{etiket}: teknik ajan durum=ok",
-                teknik_analiz["durum"] == "ok", teknik_analiz.get("mesaj", ""))
+                teknik_analiz.basarili, teknik_analiz.mesaj)
 
         # main.py'nin bağlam sözlüğü (haberler + makro/takvim özeti)
         baglam = dict(haber)
@@ -290,20 +300,18 @@ def test_hat(kisa, uzun, makro, takvim, haber):
 
         risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
         sozlesme_kontrol("risk_agent.calistir", risk)
-        kontrol(f"{etiket}: risk ajanı durum=ok",
-                risk["durum"] == "ok", risk.get("mesaj", ""))
+        kontrol(f"{etiket}: risk ajanı durum=ok", risk.basarili, risk.mesaj)
 
         karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk,
                                         makro=makro, takvim=takvim)
         sozlesme_kontrol("decision_agent.calistir", karar)
-        kontrol(f"{etiket}: karar ajanı durum=ok",
-                karar["durum"] == "ok", karar.get("mesaj", ""))
+        kontrol(f"{etiket}: karar ajanı durum=ok", karar.basarili, karar.mesaj)
         kontrol(f"{etiket}: Claude'a gerçekten ulaşıldı",
                 SahteClaude.cagri_sayisi > 0,
                 "hiç Claude çağrısı yapılmadı — hat karar ajanından önce kopuyor")
         kontrol(f"{etiket}: karar geçerli",
-                karar["karar"] in ("AL", "SAT", "BEKLE"),
-                f"karar={karar.get('karar')}")
+                karar.eylem in ("AL", "SAT", "BEKLE"),
+                f"karar={karar.eylem}")
 
         yield etiket, teknik, karar
 
@@ -316,10 +324,11 @@ def test_emir(hat_sonuclari):
     for etiket, teknik, karar in hat_sonuclari:
         kaldirac = config.KALDIRAC_KISA if etiket == "KISA" else config.KALDIRAC_UZUN
         SahteBinance.son_emirler = []
-        sonuc = order_agent.calistir(karar, teknik["fiyat"], kaldirac)
+        sonuc = order_agent.calistir(karar, teknik.fiyat, kaldirac)
 
-        kontrol(f"{etiket}: emir durum=ok", sonuc["durum"] == "ok",
-                f"durum={sonuc['durum']} — {sonuc.get('mesaj', '')}")
+        sozlesme_kontrol("order_agent.calistir", sonuc)
+        kontrol(f"{etiket}: emir durum=ok", sonuc.basarili,
+                f"durum={sonuc.durum} — {sonuc.mesaj}")
         gonderilen = [t for t, _ in SahteBinance.son_emirler]
         kontrol(f"{etiket}: market + SL + TP emirleri gitti",
                 len([g for g in gonderilen if g != "kaldirac"]) == 3,
@@ -328,49 +337,48 @@ def test_emir(hat_sonuclari):
                 ("kaldirac", kaldirac) in SahteBinance.son_emirler,
                 f"emirler: {SahteBinance.son_emirler}")
 
+    from tipler import Karar
+
     # BEKLE kararında emir gitmemeli
     SahteBinance.son_emirler = []
-    bekle = {"karar": "BEKLE", "guven": 9, "stop_loss_pct": 0.5,
-             "take_profit_pct": 1.0, "gerekce": "test"}
-    sonuc = order_agent.calistir(bekle, 4500.0, 3)
+    sonuc = order_agent.calistir(
+        Karar(eylem="BEKLE", guven=9, gerekce="test"), 4500.0, 3)
     kontrol("BEKLE kararında emir gönderilmiyor",
-            sonuc["durum"] == "bekle" and not SahteBinance.son_emirler)
+            sonuc.durum == "bekle" and not SahteBinance.son_emirler)
 
     # Düşük güvende emir gitmemeli
     SahteBinance.son_emirler = []
-    dusuk = {"karar": "AL", "guven": 2, "stop_loss_pct": 0.5,
-             "take_profit_pct": 1.0, "gerekce": "test"}
-    sonuc = order_agent.calistir(dusuk, 4500.0, 3)
+    sonuc = order_agent.calistir(
+        Karar(eylem="AL", guven=2, gerekce="test"), 4500.0, 3)
     kontrol("Düşük güvende emir gönderilmiyor",
-            sonuc["durum"] == "dusuk_guven" and not SahteBinance.son_emirler)
+            sonuc.durum == "dusuk_guven" and not SahteBinance.son_emirler)
 
 
 def test_koruma_katmanlari():
     """Takvim ve risk ajanı engelleri Claude'a sormadan BEKLE üretmeli."""
     from agents import decision_agent
+    from tipler import KisaVeri, TeknikAnaliz, RiskRaporu
     print("\n[5] koruma katmanları")
 
-    teknik = {"durum": "ok", "mod": "kisa", "fiyat": 4500.0,
-              "destek": 4480.0, "direnc": 4520.0}
-    analiz = {"durum": "ok", "mod": "kisa", "sinyal": "GUCLU_AL",
-              "sl": 4480.0, "tp": 4560.0, "yorum": "-"}
+    teknik = KisaVeri(fiyat=4500.0, destek=4480.0, direnc=4520.0)
+    analiz = TeknikAnaliz(mod="kisa", sinyal="GUCLU_AL", sl=4480.0,
+                          tp=4560.0, yorum="-")
     haber  = {"sentiment": "BULLISH", "ozet": "-"}
-    risk_e = {"durum": "ok", "risk": "ORTA", "onay": "EVET",
-              "max_pozisyon": 0.01, "uyari": "-"}
-    risk_h = {**risk_e, "onay": "HAYIR", "uyari": "volatilite yüksek"}
+    risk_e = RiskRaporu(risk="ORTA", onay="EVET", max_pozisyon=0.01, uyari="-")
+    risk_h = RiskRaporu(risk="YUKSEK", onay="HAYIR", uyari="volatilite yüksek")
 
     once = SahteClaude.cagri_sayisi
     k = decision_agent.calistir(teknik, haber, analiz, risk_e,
                                 takvim={"mod": "YUKSEK_RISK", "yaklasan_olaylar": []})
     kontrol("YUKSEK_RISK takvimde BEKLE + Claude çağrısı yok",
-            k["karar"] == "BEKLE" and SahteClaude.cagri_sayisi == once,
-            f"karar={k['karar']}, çağrı={SahteClaude.cagri_sayisi - once}")
+            k.eylem == "BEKLE" and SahteClaude.cagri_sayisi == once,
+            f"karar={k.eylem}, çağrı={SahteClaude.cagri_sayisi - once}")
 
     once = SahteClaude.cagri_sayisi
     k = decision_agent.calistir(teknik, haber, analiz, risk_h)
     kontrol("Risk ajanı HAYIR dediğinde BEKLE + Claude çağrısı yok",
-            k["karar"] == "BEKLE" and SahteClaude.cagri_sayisi == once,
-            f"karar={k['karar']}, çağrı={SahteClaude.cagri_sayisi - once}")
+            k.eylem == "BEKLE" and SahteClaude.cagri_sayisi == once,
+            f"karar={k.eylem}, çağrı={SahteClaude.cagri_sayisi - once}")
 
 
 # ══════════════════════════════════════════════════════════════════════

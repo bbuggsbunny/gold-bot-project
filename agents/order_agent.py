@@ -19,6 +19,7 @@ from binance.enums import (
 )
 from datetime import datetime
 import config
+from tipler import Karar, EmirSonucu
 from agents.utils import senkronize_et
 from agents.telegram_agent import bildir_hata
 
@@ -31,7 +32,7 @@ def get_client():
     )
 
 
-def calistir(karar: dict, fiyat: float, kaldirac: int) -> dict:
+def calistir(karar: Karar, fiyat: float, kaldirac: int) -> EmirSonucu:
     """
     Karar ajanından gelen kararı işle ve Binance'e gönder.
 
@@ -47,38 +48,38 @@ def calistir(karar: dict, fiyat: float, kaldirac: int) -> dict:
     zaman = datetime.now().strftime("%H:%M:%S")
 
     # Emir gönderme koşulları
-    if karar["karar"] == "BEKLE":
-        mesaj = f"[{zaman}] BEKLE — {karar['gerekce']}"
+    if not karar.islem_var:
+        mesaj = f"[{zaman}] BEKLE — {karar.gerekce}"
         print(mesaj)
-        return {"durum": "bekle", "mesaj": mesaj}
+        return EmirSonucu(durum="bekle", mesaj=mesaj)
 
-    if karar["guven"] < config.MIN_GUVEN_SKORU:
-        mesaj = f"[{zaman}] Güven skoru düşük ({karar['guven']}/10), emir verilmedi."
+    if karar.guven < config.MIN_GUVEN_SKORU:
+        mesaj = f"[{zaman}] Güven skoru düşük ({karar.guven}/10), emir verilmedi."
         print(mesaj)
-        return {"durum": "dusuk_guven", "mesaj": mesaj}
+        return EmirSonucu(durum="dusuk_guven", mesaj=mesaj)
 
     # Hangi yönde işlem?
-    islem_yonu = karar["karar"]  # "AL" veya "SAT"
+    islem_yonu = karar.eylem  # "AL" veya "SAT"
     side       = SIDE_BUY if islem_yonu == "AL" else SIDE_SELL
     kapat_side = SIDE_SELL if islem_yonu == "AL" else SIDE_BUY
 
     # Stop-loss ve take-profit fiyatlarını hesapla
     if islem_yonu == "AL":
-        stop_loss_fiyat   = round(fiyat * (1 - karar["stop_loss_pct"] / 100), 2)
-        take_profit_fiyat = round(fiyat * (1 + karar["take_profit_pct"] / 100), 2)
+        stop_loss_fiyat   = round(fiyat * (1 - karar.stop_loss_pct / 100), 2)
+        take_profit_fiyat = round(fiyat * (1 + karar.take_profit_pct / 100), 2)
     else:
-        stop_loss_fiyat   = round(fiyat * (1 + karar["stop_loss_pct"] / 100), 2)
-        take_profit_fiyat = round(fiyat * (1 - karar["take_profit_pct"] / 100), 2)
+        stop_loss_fiyat   = round(fiyat * (1 + karar.stop_loss_pct / 100), 2)
+        take_profit_fiyat = round(fiyat * (1 - karar.take_profit_pct / 100), 2)
 
     print(f"\n[{zaman}] {'='*45}")
     print(f"  EMİR      : {islem_yonu}")
     print(f"  Fiyat     : {fiyat} USD")
     print(f"  Miktar    : {config.QUANTITY} oz")
     print(f"  Kaldıraç  : {kaldirac}x")
-    print(f"  Stop-Loss : {stop_loss_fiyat} USD (-%{karar['stop_loss_pct']})")
-    print(f"  Take-Prof : {take_profit_fiyat} USD (+%{karar['take_profit_pct']})")
-    print(f"  Güven     : {karar['guven']}/10")
-    print(f"  Gerekçe   : {karar['gerekce']}")
+    print(f"  Stop-Loss : {stop_loss_fiyat} USD (-%{karar.stop_loss_pct})")
+    print(f"  Take-Prof : {take_profit_fiyat} USD (+%{karar.take_profit_pct})")
+    print(f"  Güven     : {karar.guven}/10")
+    print(f"  Gerekçe   : {karar.gerekce}")
     print(f"  Mod       : {'TESTNET' if config.TESTNET else 'GERÇEK PARA'}")
 
     client = get_client()
@@ -123,14 +124,13 @@ def calistir(karar: dict, fiyat: float, kaldirac: int) -> dict:
             print(f"  Take-Profit ayarlandı. ID: {tp_emir['orderId']}")
             print(f"\n  Tüm emirler başarıyla gönderildi.")
 
-            return {
-                "durum":      "ok",
-                "islem":      islem_yonu,
-                "fiyat":      fiyat,
-                "stop_loss":  stop_loss_fiyat,
-                "take_profit": take_profit_fiyat,
-                "emir_id":    emir["orderId"]
-            }
+            return EmirSonucu(
+                islem=islem_yonu,
+                fiyat=fiyat,
+                stop_loss=stop_loss_fiyat,
+                take_profit=take_profit_fiyat,
+                emir_id=emir["orderId"],
+            )
 
         except Exception as e:
             son_hata = e
@@ -139,30 +139,21 @@ def calistir(karar: dict, fiyat: float, kaldirac: int) -> dict:
                 time.sleep(5)
 
     bildir_hata(f"order_agent emir gönderilemedi (3 deneme): {son_hata}")
-    return {"durum": "hata", "mesaj": str(son_hata)}
+    return EmirSonucu.hata(son_hata)
 
 
 if __name__ == "__main__":
-    # Test: gerçek emir GÖNDERME, sadece mantığı test et
+    # Gerçek emir GÖNDERİLMEZ — sadece emir öncesi kontroller test edilir.
     print("Emir ajani test ediliyor (BEKLE senaryosu)...\n")
-
-    test_karar_bekle = {
-        "karar": "BEKLE",
-        "guven": 4,
-        "stop_loss_pct": 0.5,
-        "take_profit_pct": 1.0,
-        "gerekce": "Sinyal yetersiz"
-    }
-    sonuc = calistir(test_karar_bekle, 4536.26, config.KALDIRAC_KISA)
-    print(f"Sonuc: {sonuc['durum']}\n")
+    sonuc = calistir(
+        Karar(eylem="BEKLE", guven=4, gerekce="Sinyal yetersiz"),
+        4536.26, config.KALDIRAC_KISA,
+    )
+    print(f"Sonuc: {sonuc.durum}\n")
 
     print("Dusuk guven senaryosu...\n")
-    test_karar_dusuk = {
-        "karar": "AL",
-        "guven": 3,
-        "stop_loss_pct": 0.5,
-        "take_profit_pct": 1.0,
-        "gerekce": "Zayif sinyal"
-    }
-    sonuc = calistir(test_karar_dusuk, 4536.26, config.KALDIRAC_KISA)
-    print(f"Sonuc: {sonuc['durum']}")
+    sonuc = calistir(
+        Karar(eylem="AL", guven=3, gerekce="Zayif sinyal"),
+        4536.26, config.KALDIRAC_KISA,
+    )
+    print(f"Sonuc: {sonuc.durum}")

@@ -11,27 +11,28 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import anthropic
 import config
+from tipler import TeknikVeri, TeknikAnaliz
 
 
-def calistir(teknik: dict) -> dict:
+def calistir(teknik: TeknikVeri) -> TeknikAnaliz:
     try:
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        mod    = teknik.get("mod", "uzun")
+        mod    = teknik.mod
 
         if mod == "kisa":
             prompt = f"""
 Sen kısa vadeli bir teknik analistsin. Breakout stratejisi kullanıyorsun.
 
 VERİLER:
-- Fiyat    : {teknik['fiyat']} USD
-- Yüksek   : {teknik['yuksek']} USD
-- Düşük    : {teknik['dusuk']} USD
-- Direnç   : {teknik['direnc']} USD (son 20 mumun en yükseği)
-- Destek   : {teknik['destek']} USD (son 20 mumun en düşüğü)
-- ATR      : {teknik['atr']} USD
-- Hacim    : {teknik['hacim']} (Ortalama: {teknik['hacim_ort']})
-- Hacim teyit: {teknik['hacim_teyit']}
-- Breakout : {teknik['breakout']}
+- Fiyat    : {teknik.fiyat} USD
+- Yüksek   : {teknik.yuksek} USD
+- Düşük    : {teknik.dusuk} USD
+- Direnç   : {teknik.direnc} USD (son 20 mumun en yükseği)
+- Destek   : {teknik.destek} USD (son 20 mumun en düşüğü)
+- ATR      : {teknik.atr} USD
+- Hacim    : {teknik.hacim} (Ortalama: {teknik.hacim_ort})
+- Hacim teyit: {teknik.hacim_teyit}
+- Breakout : {teknik.breakout}
 
 SADECE şu 4 satırı yaz:
 SINYAL: GUCLU_AL veya ZAYIF_AL veya NOTR veya ZAYIF_SAT veya GUCLU_SAT
@@ -44,13 +45,13 @@ YORUM: tek cumle turkce
 Sen uzun vadeli bir teknik analistsin. RSI/MACD/Bollinger kullanıyorsun.
 
 VERİLER:
-- Fiyat    : {teknik['fiyat']} USD
-- RSI      : {teknik['rsi']} → {teknik['rsi_yorum']}
-- MACD     : {teknik['macd']} / Sinyal: {teknik['macd_sinyal']}
-- BB Üst   : {teknik['bb_ust']} / Alt: {teknik['bb_alt']}
-- MA20     : {teknik['ma20']} / MA50: {teknik['ma50']}
-- Trend    : {teknik['trend']}
-- ATR      : {teknik['atr']} USD
+- Fiyat    : {teknik.fiyat} USD
+- RSI      : {teknik.rsi} → {teknik.rsi_yorum}
+- MACD     : {teknik.macd} / Sinyal: {teknik.macd_sinyal}
+- BB Üst   : {teknik.bb_ust} / Alt: {teknik.bb_alt}
+- MA20     : {teknik.ma20} / MA50: {teknik.ma50}
+- Trend    : {teknik.trend}
+- ATR      : {teknik.atr} USD
 
 SADECE şu 4 satırı yaz:
 SINYAL: GUCLU_AL veya ZAYIF_AL veya NOTR veya ZAYIF_SAT veya GUCLU_SAT
@@ -68,8 +69,8 @@ YORUM: tek cumle turkce
 
         ham    = response.content[0].text.strip()
         sinyal = "NOTR"
-        sl     = teknik['fiyat'] * 0.995
-        tp     = teknik['fiyat'] * 1.01
+        sl     = teknik.fiyat * 0.995
+        tp     = teknik.fiyat * 1.01
         yorum  = ""
 
         for satir in ham.split("\n"):
@@ -89,26 +90,22 @@ YORUM: tek cumle turkce
             elif satir.startswith("YORUM:"):
                 yorum = satir.replace("YORUM:", "").strip()
 
-        return {
-            "durum":  "ok",
-            "mod":    mod,
-            "sinyal": sinyal,
-            "sl":     round(sl, 2),
-            "tp":     round(tp, 2),
-            "yorum":  yorum
-        }
+        return TeknikAnaliz(
+            mod=mod,
+            sinyal=sinyal,
+            sl=round(sl, 2),
+            tp=round(tp, 2),
+            yorum=yorum,
+        )
 
     except Exception as e:
         print(f"  [TEKNİK] ⚠️  Teknik ajan hatası ({type(e).__name__}): {e} → NOTR")
-        return {
-            "durum":  "hata",
-            "mod":    teknik.get("mod", "uzun"),
-            "sinyal": "NOTR",
-            "sl":     0,
-            "tp":     0,
-            "yorum":  "Teknik analiz alinamadi",
-            "mesaj":  str(e)
-        }
+        return TeknikAnaliz(
+            durum="hata",
+            mod=getattr(teknik, "mod", "uzun"),
+            yorum="Teknik analiz alinamadi",
+            mesaj=str(e),
+        )
 
 
 if __name__ == "__main__":
@@ -117,15 +114,15 @@ if __name__ == "__main__":
     print("=== KISA VADELİ TEKNİK ANALİZ ===")
     kisa = kisa_vadeli_veri()
     sonuc = calistir(kisa)
-    print(f"Sinyal : {sonuc['sinyal']}")
-    print(f"SL     : {sonuc['sl']}")
-    print(f"TP     : {sonuc['tp']}")
-    print(f"Yorum  : {sonuc['yorum']}")
+    print(f"Sinyal : {sonuc.sinyal}")
+    print(f"SL     : {sonuc.sl}")
+    print(f"TP     : {sonuc.tp}")
+    print(f"Yorum  : {sonuc.yorum}")
 
     print("\n=== UZUN VADELİ TEKNİK ANALİZ ===")
     uzun = uzun_vadeli_veri()
     sonuc = calistir(uzun)
-    print(f"Sinyal : {sonuc['sinyal']}")
-    print(f"SL     : {sonuc['sl']}")
-    print(f"TP     : {sonuc['tp']}")
-    print(f"Yorum  : {sonuc['yorum']}")
+    print(f"Sinyal : {sonuc.sinyal}")
+    print(f"SL     : {sonuc.sl}")
+    print(f"TP     : {sonuc.tp}")
+    print(f"Yorum  : {sonuc.yorum}")

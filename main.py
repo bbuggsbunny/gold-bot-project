@@ -221,19 +221,19 @@ def kisa_vadeli_dongu():
 
     # Veri
     teknik = data_agent.kisa_vadeli_veri()
-    if teknik["durum"] == "hata":
-        print(f"  [KISA] Veri hatası: {teknik['mesaj']}")
+    if not teknik.basarili:
+        print(f"  [KISA] Veri hatası: {teknik.mesaj}")
         return
-    print(f"  [KISA] Fiyat: {teknik['fiyat']} | Breakout: {teknik['breakout']}")
+    print(f"  [KISA] Fiyat: {teknik.fiyat} | Breakout: {teknik.breakout}")
 
     # Breakout yoksa çık
-    if teknik["breakout"] == "YOK":
+    if teknik.breakout == "YOK":
         print(f"  [KISA] Breakout yok, bekleniyor.")
         return
 
     # Teknik analiz
     teknik_analiz = technical_agent.calistir(teknik)
-    print(f"  [KISA] Sinyal: {teknik_analiz['sinyal']} | {teknik_analiz['yorum'][:60]}")
+    print(f"  [KISA] Sinyal: {teknik_analiz.sinyal} | {teknik_analiz.yorum[:60]}")
 
     # Makro + haber + takvim bağlamını oku
     baglam, makro, takvim = _baglam_olustur()
@@ -241,22 +241,22 @@ def kisa_vadeli_dongu():
 
     # Risk değerlendirmesi
     risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
-    print(f"  [KISA] Risk: {risk['risk']} | Onay: {risk['onay']}")
+    print(f"  [KISA] Risk: {risk.risk} | Onay: {risk.onay}")
 
     # Karar
     karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk, makro=makro, takvim=takvim)
-    print(f"  [KISA] Karar: {karar['karar']} | Güven: {karar['guven']}/10")
+    print(f"  [KISA] Karar: {karar.eylem} | Güven: {karar.guven}/10")
 
     # Emir
-    if karar["karar"] != "BEKLE" and karar["guven"] >= config.MIN_GUVEN_SKORU:
-        bildir_sinyal(karar["karar"], teknik["fiyat"], "Breakout", karar["guven"])
-        sonuc = order_agent.calistir(karar, teknik["fiyat"], config.KALDIRAC_KISA)
-        if sonuc["durum"] == "ok":
+    if karar.islem_var and karar.guven >= config.MIN_GUVEN_SKORU:
+        bildir_sinyal(karar.eylem, teknik.fiyat, "Breakout", karar.guven)
+        sonuc = order_agent.calistir(karar, teknik.fiyat, config.KALDIRAC_KISA)
+        if sonuc.basarili:
             bildir_emir(
-                karar["karar"], teknik["fiyat"],
-                config.QUANTITY, sonuc["stop_loss"], sonuc["take_profit"]
+                karar.eylem, teknik.fiyat,
+                config.QUANTITY, sonuc.stop_loss, sonuc.take_profit
             )
-            _zarar_ekle(karar.get("stop_loss_pct", config.MAX_STOP_LOSS_PCT), teknik["fiyat"])
+            _zarar_ekle(karar.stop_loss_pct, teknik.fiyat)
 
 
 def uzun_vadeli_dongu(haber_guncelle_de=False):
@@ -286,14 +286,14 @@ def uzun_vadeli_dongu(haber_guncelle_de=False):
 
     # Veri
     teknik = data_agent.uzun_vadeli_veri()
-    if teknik["durum"] == "hata":
-        print(f"  [UZUN] Veri hatası: {teknik['mesaj']}")
+    if not teknik.basarili:
+        print(f"  [UZUN] Veri hatası: {teknik.mesaj}")
         return
-    print(f"  [UZUN] Fiyat: {teknik['fiyat']} | RSI: {teknik['rsi']} | Trend: {teknik['trend']}")
+    print(f"  [UZUN] Fiyat: {teknik.fiyat} | RSI: {teknik.rsi} | Trend: {teknik.trend}")
 
     # Teknik analiz
     teknik_analiz = technical_agent.calistir(teknik)
-    print(f"  [UZUN] Sinyal: {teknik_analiz['sinyal']} | {teknik_analiz['yorum'][:60]}")
+    print(f"  [UZUN] Sinyal: {teknik_analiz.sinyal} | {teknik_analiz.yorum[:60]}")
 
     # Makro + haber + takvim bağlamını oku
     baglam, makro, takvim = _baglam_olustur()
@@ -301,22 +301,22 @@ def uzun_vadeli_dongu(haber_guncelle_de=False):
 
     # Risk
     risk = risk_agent.calistir(teknik, teknik_analiz, baglam)
-    print(f"  [UZUN] Risk: {risk['risk']} | Onay: {risk['onay']}")
+    print(f"  [UZUN] Risk: {risk.risk} | Onay: {risk.onay}")
 
     # Karar
     karar = decision_agent.calistir(teknik, baglam, teknik_analiz, risk, makro=makro, takvim=takvim)
-    print(f"  [UZUN] Karar: {karar['karar']} | Güven: {karar['guven']}/10")
+    print(f"  [UZUN] Karar: {karar.eylem} | Güven: {karar.guven}/10")
 
     # Emir
-    if karar["karar"] != "BEKLE" and karar["guven"] >= config.MIN_GUVEN_SKORU:
-        bildir_sinyal(karar["karar"], teknik["fiyat"], "RSI/MACD/BB", karar["guven"])
-        sonuc = order_agent.calistir(karar, teknik["fiyat"], config.KALDIRAC_UZUN)
-        if sonuc["durum"] == "ok":
+    if karar.islem_var and karar.guven >= config.MIN_GUVEN_SKORU:
+        bildir_sinyal(karar.eylem, teknik.fiyat, "RSI/MACD/BB", karar.guven)
+        sonuc = order_agent.calistir(karar, teknik.fiyat, config.KALDIRAC_UZUN)
+        if sonuc.basarili:
             bildir_emir(
-                karar["karar"], teknik["fiyat"],
-                config.QUANTITY, sonuc["stop_loss"], sonuc["take_profit"]
+                karar.eylem, teknik.fiyat,
+                config.QUANTITY, sonuc.stop_loss, sonuc.take_profit
             )
-            _zarar_ekle(karar.get("stop_loss_pct", config.MAX_STOP_LOSS_PCT), teknik["fiyat"])
+            _zarar_ekle(karar.stop_loss_pct, teknik.fiyat)
     print(f"{'='*50}")
 
 

@@ -15,6 +15,7 @@ from binance.client import Client
 from datetime import datetime
 
 import config
+from tipler import KisaVeri
 from agents.data_agent import hesapla_rsi, hesapla_macd, hesapla_bollinger
 from agents import technical_agent, risk_agent, decision_agent
 from agents.macro_agent import calistir as macro_calistir
@@ -51,8 +52,8 @@ def _veri_cek() -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
-def _teknik_dict(df: pd.DataFrame, idx: int) -> dict:
-    """idx'e kadar (dahil) olan veriyle kısa vadeli teknik dict üretir."""
+def _teknik_dict(df: pd.DataFrame, idx: int) -> KisaVeri:
+    """idx'e kadar (dahil) olan veriyle kısa vadeli teknik veri üretir."""
     pencere = df.iloc[: idx + 1].copy()
     close  = pencere["kapanis"]
     high   = pencere["yuksek"]
@@ -78,22 +79,20 @@ def _teknik_dict(df: pd.DataFrame, idx: int) -> dict:
     else:
         breakout = "YOK"
 
-    return {
-        "durum":         "ok",
-        "mod":           "kisa",
-        "fiyat":         guncel,
-        "degisim_pct":   round((guncel - onceki) / onceki * 100, 3),
-        "yuksek":        round(float(high.iloc[-1]), 2),
-        "dusuk":         round(float(low.iloc[-1]), 2),
-        "direnc":        direnc,
-        "destek":        destek,
-        "atr":           atr,
-        "hacim":         son_hacim,
-        "hacim_ort":     hacim_ort,
-        "hacim_teyit":   hacim_teyit,
-        "breakout":      breakout,
-        "son_5_kapanis": [round(x, 2) for x in close.tail(5).tolist()],
-    }
+    return KisaVeri(
+        fiyat=guncel,
+        degisim_pct=round((guncel - onceki) / onceki * 100, 3),
+        yuksek=round(float(high.iloc[-1]), 2),
+        dusuk=round(float(low.iloc[-1]), 2),
+        direnc=direnc,
+        destek=destek,
+        atr=atr,
+        hacim=son_hacim,
+        hacim_ort=hacim_ort,
+        hacim_teyit=hacim_teyit,
+        breakout=breakout,
+        son_5_kapanis=[round(x, 2) for x in close.tail(5).tolist()],
+    )
 
 
 def _kz_hesapla(df: pd.DataFrame, giris_idx: int, yon: str, atr: float) -> str:
@@ -168,8 +167,8 @@ def calistir():
         teknik = _teknik_dict(df, i)
         zaman_str = df["zaman"].iloc[i].strftime("%H:%M")
 
-        if teknik["breakout"] == "YOK":
-            print(f"  {zaman_str:<8} {teknik['fiyat']:>8.2f} {'YOK':<9} {'─':<6} {'─':>5}  (breakout yok)")
+        if teknik.breakout == "YOK":
+            print(f"  {zaman_str:<8} {teknik.fiyat:>8.2f} {'YOK':<9} {'─':<6} {'─':>5}  (breakout yok)")
             kararlar["BEKLE"] += 1
             continue
 
@@ -181,20 +180,19 @@ def calistir():
             makro=makro, takvim=takvim,
         )
 
-        k      = karar["karar"]
-        guven  = karar["guven"]
+        k      = karar.eylem
+        guven  = karar.guven
         kararlar[k] += 1
 
-        if k in ("AL", "SAT"):
-            sonuc = _kz_hesapla(df, i, k, teknik["atr"])
+        if karar.islem_var:
+            sonuc = _kz_hesapla(df, i, k, teknik.atr)
             islemler.append({
                 "zaman": zaman_str, "yon": k, "guven": guven, "sonuc": sonuc,
-                "fiyat": teknik["fiyat"], "atr": teknik["atr"],
+                "fiyat": teknik.fiyat, "atr": teknik.atr,
             })
-            print(f"  {zaman_str:<8} {teknik['fiyat']:>8.2f} {teknik['breakout']:<9} {k:<6} {guven:>4}/10  {sonuc}")
+            print(f"  {zaman_str:<8} {teknik.fiyat:>8.2f} {teknik.breakout:<9} {k:<6} {guven:>4}/10  {sonuc}")
         else:
-            gerkce = karar.get("gerekce", "")[:45]
-            print(f"  {zaman_str:<8} {teknik['fiyat']:>8.2f} {teknik['breakout']:<9} {k:<6} {guven:>4}/10  ({gerkce})")
+            print(f"  {zaman_str:<8} {teknik.fiyat:>8.2f} {teknik.breakout:<9} {k:<6} {guven:>4}/10  ({karar.gerekce[:45]})")
 
     # 4. Özet rapor
     print("\n" + "═" * 60)

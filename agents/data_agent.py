@@ -13,6 +13,7 @@ import time
 import pandas as pd
 from binance.client import Client
 import config
+from tipler import KisaVeri, UzunVeri
 from agents.utils import senkronize_et
 from agents.telegram_agent import bildir_hata
 
@@ -45,7 +46,7 @@ def hesapla_bollinger(close, periyot=20, std=2):
     return ort + (sapma * std), ort, ort - (sapma * std)
 
 
-def kisa_vadeli_veri() -> dict:
+def kisa_vadeli_veri() -> KisaVeri:
     """
     Kısa vadeli bot için 1 dakikalık mum verisi.
     Breakout stratejisi için:
@@ -98,22 +99,20 @@ def kisa_vadeli_veri() -> dict:
             else:
                 breakout = "YOK"
 
-            return {
-                "durum":        "ok",
-                "mod":          "kisa",
-                "fiyat":        guncel,
-                "degisim_pct":  degisim,
-                "yuksek":       round(float(high.iloc[-1]), 2),
-                "dusuk":        round(float(low.iloc[-1]), 2),
-                "direnc":       direnc,
-                "destek":       destek,
-                "atr":          atr,
-                "hacim":        son_hacim,
-                "hacim_ort":    hacim_ort,
-                "hacim_teyit":  hacim_teyit,
-                "breakout":     breakout,
-                "son_5_kapanis": [round(x, 2) for x in close.tail(5).tolist()]
-            }
+            return KisaVeri(
+                fiyat=guncel,
+                degisim_pct=degisim,
+                yuksek=round(float(high.iloc[-1]), 2),
+                dusuk=round(float(low.iloc[-1]), 2),
+                direnc=direnc,
+                destek=destek,
+                atr=atr,
+                hacim=son_hacim,
+                hacim_ort=hacim_ort,
+                hacim_teyit=hacim_teyit,
+                breakout=breakout,
+                son_5_kapanis=[round(x, 2) for x in close.tail(5).tolist()],
+            )
 
         except Exception as e:
             son_hata = e
@@ -122,10 +121,10 @@ def kisa_vadeli_veri() -> dict:
                 time.sleep(5)
 
     bildir_hata(f"data_agent kısa veri alınamadı (3 deneme): {son_hata}")
-    return {"durum": "hata", "mod": "kisa", "mesaj": str(son_hata)}
+    return KisaVeri.hata(son_hata)
 
 
-def uzun_vadeli_veri() -> dict:
+def uzun_vadeli_veri() -> UzunVeri:
     """
     Uzun vadeli bot için 15 dakikalık mum verisi.
     RSI + MACD + Bollinger stratejisi.
@@ -169,24 +168,22 @@ def uzun_vadeli_veri() -> dict:
             else:
                 rsi_yorum = "NOTR"
 
-            return {
-                "durum":        "ok",
-                "mod":          "uzun",
-                "fiyat":        guncel,
-                "degisim_pct":  degisim,
-                "rsi":          rsi_son,
-                "rsi_yorum":    rsi_yorum,
-                "macd":         round(float(macd.iloc[-1]), 4),
-                "macd_sinyal":  round(float(sinyal.iloc[-1]), 4),
-                "macd_hist":    round(float((macd - sinyal).iloc[-1]), 4),
-                "ma20":         round(float(ma20), 2),
-                "ma50":         round(float(ma50), 2),
-                "bb_ust":       round(float(bb_ust.iloc[-1]), 2),
-                "bb_alt":       round(float(bb_alt.iloc[-1]), 2),
-                "atr":          round(float(atr), 2),
-                "trend":        "YUKARI" if ma20 > ma50 else "ASAGI",
-                "son_5_kapanis": [round(x, 2) for x in close.tail(5).tolist()]
-            }
+            return UzunVeri(
+                fiyat=guncel,
+                degisim_pct=degisim,
+                rsi=rsi_son,
+                rsi_yorum=rsi_yorum,
+                macd=round(float(macd.iloc[-1]), 4),
+                macd_sinyal=round(float(sinyal.iloc[-1]), 4),
+                macd_hist=round(float((macd - sinyal).iloc[-1]), 4),
+                ma20=round(float(ma20), 2),
+                ma50=round(float(ma50), 2),
+                bb_ust=round(float(bb_ust.iloc[-1]), 2),
+                bb_alt=round(float(bb_alt.iloc[-1]), 2),
+                atr=round(float(atr), 2),
+                trend="YUKARI" if ma20 > ma50 else "ASAGI",
+                son_5_kapanis=[round(x, 2) for x in close.tail(5).tolist()],
+            )
 
         except Exception as e:
             son_hata = e
@@ -195,20 +192,18 @@ def uzun_vadeli_veri() -> dict:
                 time.sleep(5)
 
     bildir_hata(f"data_agent uzun veri alınamadı (3 deneme): {son_hata}")
-    return {"durum": "hata", "mod": "uzun", "mesaj": str(son_hata)}
+    return UzunVeri.hata(son_hata)
 
 
 # Geriye uyumluluk için eski fonksiyon
-def calistir() -> dict:
+def calistir() -> UzunVeri:
     return uzun_vadeli_veri()
 
 
 if __name__ == "__main__":
     import json
     print("=== KISA VADELİ VERİ (1m) ===")
-    sonuc = kisa_vadeli_veri()
-    print(json.dumps(sonuc, indent=2, ensure_ascii=False))
+    print(json.dumps(kisa_vadeli_veri().sozluk(), indent=2, ensure_ascii=False))
 
     print("\n=== UZUN VADELİ VERİ (15m) ===")
-    sonuc = uzun_vadeli_veri()
-    print(json.dumps(sonuc, indent=2, ensure_ascii=False))
+    print(json.dumps(uzun_vadeli_veri().sozluk(), indent=2, ensure_ascii=False))

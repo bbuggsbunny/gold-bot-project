@@ -10,38 +10,40 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import anthropic
 import config
+from tipler import TeknikVeri, TeknikAnaliz, RiskRaporu
 
 
-def calistir(teknik: dict, teknik_analiz: dict, haberler: dict) -> dict:
+def calistir(teknik: TeknikVeri, teknik_analiz: TeknikAnaliz,
+             haberler: dict) -> RiskRaporu:
     try:
         client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-        mod    = teknik.get("mod", "uzun")
+        mod    = teknik.mod
 
         # Mod'a göre ek bilgi hazırla
         if mod == "kisa":
             ek_bilgi = f"""
-- Breakout: {teknik.get('breakout', 'YOK')}
-- Direnç  : {teknik.get('direnc', '-')} USD
-- Destek  : {teknik.get('destek', '-')} USD
-- ATR     : {teknik.get('atr', '-')} USD
-- Hacim teyit: {teknik.get('hacim_teyit', False)}"""
+- Breakout: {teknik.breakout}
+- Direnç  : {teknik.direnc} USD
+- Destek  : {teknik.destek} USD
+- ATR     : {teknik.atr} USD
+- Hacim teyit: {teknik.hacim_teyit}"""
             kaldirac = config.KALDIRAC_KISA
         else:
             ek_bilgi = f"""
-- RSI     : {teknik.get('rsi', '-')} → {teknik.get('rsi_yorum', '-')}
-- Trend   : {teknik.get('trend', '-')}
-- BB Üst  : {teknik.get('bb_ust', '-')} USD
-- BB Alt  : {teknik.get('bb_alt', '-')} USD"""
+- RSI     : {teknik.rsi} → {teknik.rsi_yorum}
+- Trend   : {teknik.trend}
+- BB Üst  : {teknik.bb_ust} USD
+- BB Alt  : {teknik.bb_alt} USD"""
             kaldirac = config.KALDIRAC_UZUN
 
         prompt = f"""
 Sen muhafazakar bir risk yöneticisisin. Şüphede HAYIR dersin.
 
 MOD: {'Kısa vadeli (Breakout)' if mod == 'kisa' else 'Uzun vadeli (Swing)'}
-FİYAT: {teknik['fiyat']} USD
+FİYAT: {teknik.fiyat} USD
 {ek_bilgi}
 
-TEKNİK SİNYAL: {teknik_analiz['sinyal']}
+TEKNİK SİNYAL: {teknik_analiz.sinyal}
 HABER SENTİMENT: {haberler['sentiment']}
 
 KALDIRAÇ: {kaldirac}x
@@ -82,21 +84,14 @@ UYARI: tek cumle turkce
             elif satir.startswith("UYARI:"):
                 uyari = satir.replace("UYARI:", "").strip()
 
-        return {
-            "durum":        "ok",
-            "risk":         risk,
-            "onay":         onay,
-            "max_pozisyon": max_poz,
-            "uyari":        uyari
-        }
+        return RiskRaporu(
+            risk=risk,
+            onay=onay,
+            max_pozisyon=max_poz,
+            uyari=uyari,
+        )
 
     except Exception as e:
         print(f"  [RİSK] ⚠️  Risk ajanı hatası ({type(e).__name__}): {e} → ONAY:HAYIR")
-        return {
-            "durum":        "hata",
-            "risk":         "COK_YUKSEK",
-            "onay":         "HAYIR",
-            "max_pozisyon": 0,
-            "uyari":        "Risk ajani hatasi",
-            "mesaj":        str(e)
-        }
+        # Varsayılanlar zaten muhafazakâr: risk COK_YUKSEK, onay HAYIR
+        return RiskRaporu(durum="hata", uyari="Risk ajani hatasi", mesaj=str(e))
