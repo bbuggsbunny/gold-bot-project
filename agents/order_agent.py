@@ -31,9 +31,12 @@ def get_client():
     )
 
 
-def calistir(karar: dict, fiyat: float) -> dict:
+def calistir(karar: dict, fiyat: float, kaldirac: int) -> dict:
     """
     Karar ajanından gelen kararı işle ve Binance'e gönder.
+
+    kaldirac: çağıran katmanın kaldıracı
+              (config.KALDIRAC_KISA = 10x / config.KALDIRAC_UZUN = 3x)
 
     Mantık:
     - BEKLE → hiçbir şey yapma
@@ -71,7 +74,7 @@ def calistir(karar: dict, fiyat: float) -> dict:
     print(f"  EMİR      : {islem_yonu}")
     print(f"  Fiyat     : {fiyat} USD")
     print(f"  Miktar    : {config.QUANTITY} oz")
-    print(f"  Kaldıraç  : {config.LEVERAGE}x")
+    print(f"  Kaldıraç  : {kaldirac}x")
     print(f"  Stop-Loss : {stop_loss_fiyat} USD (-%{karar['stop_loss_pct']})")
     print(f"  Take-Prof : {take_profit_fiyat} USD (+%{karar['take_profit_pct']})")
     print(f"  Güven     : {karar['guven']}/10")
@@ -87,7 +90,7 @@ def calistir(karar: dict, fiyat: float) -> dict:
             # 1. Kaldıraç ayarla
             client.futures_change_leverage(
                 symbol=config.SYMBOL,
-                leverage=config.LEVERAGE
+                leverage=kaldirac
             )
 
             # 2. Ana piyasa emri
@@ -150,7 +153,7 @@ if __name__ == "__main__":
         "take_profit_pct": 1.0,
         "gerekce": "Sinyal yetersiz"
     }
-    sonuc = calistir(test_karar_bekle, 4536.26)
+    sonuc = calistir(test_karar_bekle, 4536.26, config.KALDIRAC_KISA)
     print(f"Sonuc: {sonuc['durum']}\n")
 
     print("Dusuk guven senaryosu...\n")
@@ -161,5 +164,5 @@ if __name__ == "__main__":
         "take_profit_pct": 1.0,
         "gerekce": "Zayif sinyal"
     }
-    sonuc = calistir(test_karar_dusuk, 4536.26)
+    sonuc = calistir(test_karar_dusuk, 4536.26, config.KALDIRAC_KISA)
     print(f"Sonuc: {sonuc['durum']}")

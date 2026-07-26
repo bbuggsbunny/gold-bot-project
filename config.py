@@ -18,8 +18,8 @@ TESTNET            = os.getenv("TESTNET", "True") == "True"
 
 # ── İşlem Ayarları ──────────────────────────
 SYMBOL    = "XAUUSDT"   # Altın/Dolar paritesi
-LEVERAGE  = 5           # Kaldıraç: 5x (100$ ile 500$'lık pozisyon)
 QUANTITY  = 0.01        # Her emirde kaç gram altın (küçük tut!)
+# Kaldıraç katmana göre seçilir → aşağıdaki KALDIRAC_KISA / KALDIRAC_UZUN
 
 # ── Strateji Eşikleri ───────────────────────
 MIN_GUVEN_SKORU = 6     # Claude bu skorun altında karar verirse emir gitmiyor
@@ -34,9 +34,9 @@ MAX_STOP_LOSS_PCT    = 1.0   # Maksimum zarar: pozisyonun %1'i
 MAX_TAKE_PROFIT_PCT  = 2.0   # Hedef kâr: pozisyonun %2'si
 MAX_GUNLUK_ZARAR     = 75.0  # Günlük max zarar ($) — aşılınca o gün işlem durur
 
-# Kısa vadeli bot ayarları
-KALDIRAC_KISA  = 10   # Breakout botu
-KALDIRAC_UZUN  = 3    # Swing trader botu
+# Katman kaldıraçları — order_agent'a katmana göre iletilir
+KALDIRAC_KISA  = 10   # Breakout botu (1 dk döngü)
+KALDIRAC_UZUN  = 3    # Swing trader botu (4 saat döngü)
 
 # Breakout ATR çarpanları
 ATR_SL_CARPAN  = 1.0

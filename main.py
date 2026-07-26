@@ -250,7 +250,7 @@ def kisa_vadeli_dongu():
     # Emir
     if karar["karar"] != "BEKLE" and karar["guven"] >= config.MIN_GUVEN_SKORU:
         bildir_sinyal(karar["karar"], teknik["fiyat"], "Breakout", karar["guven"])
-        sonuc = order_agent.calistir(karar, teknik["fiyat"])
+        sonuc = order_agent.calistir(karar, teknik["fiyat"], config.KALDIRAC_KISA)
         if sonuc["durum"] == "ok":
             bildir_emir(
                 karar["karar"], teknik["fiyat"],
@@ -310,7 +310,7 @@ def uzun_vadeli_dongu(haber_guncelle_de=False):
     # Emir
     if karar["karar"] != "BEKLE" and karar["guven"] >= config.MIN_GUVEN_SKORU:
         bildir_sinyal(karar["karar"], teknik["fiyat"], "RSI/MACD/BB", karar["guven"])
-        sonuc = order_agent.calistir(karar, teknik["fiyat"])
+        sonuc = order_agent.calistir(karar, teknik["fiyat"], config.KALDIRAC_UZUN)
         if sonuc["durum"] == "ok":
             bildir_emir(
                 karar["karar"], teknik["fiyat"],
