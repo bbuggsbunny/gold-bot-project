@@ -82,6 +82,26 @@ def main():
 
     hatalar = []
 
+    # ── 0. Hesap ──────────────────────────────────────────────────
+    bolum("0/6", "Binance hesabı — işlem yapabilir mi?")
+    hesap = order_agent.hesap_kontrol()
+    if hesap["durum"] != "ok":
+        print(f"  ✗ Hesap sorgulanamadı: {hesap['mesaj']}")
+        hatalar.append("hesap")
+    elif not hesap["islem_yapabilir"]:
+        print("  ✗ HESAP İŞLEM YAPAMAZ (canTrade=False)")
+        print(f"    Bakiye: {hesap['bakiye']:.2f} USDT")
+        print("    Binance Futures testnet hesapları periyodik sıfırlanır.")
+        print("    → testnet.binancefuture.com adresinden yeni anahtar alıp")
+        print("      .env dosyasını güncelle. Bot sinyal üretir ama her emir")
+        print("      reddedilir.")
+        hatalar.append("hesap: canTrade=False")
+    elif hesap["bakiye"] <= 0:
+        print(f"  ✗ Bakiye yok ({hesap['bakiye']:.2f} USDT) — emir açılamaz")
+        hatalar.append("hesap: bakiye yok")
+    else:
+        print(f"  ✓ İşlem açık | Bakiye: {hesap['bakiye']:.2f} USDT")
+
     # ── 1. Makro ──────────────────────────────────────────────────
     bolum("1/6", "macro_agent — yfinance (DXY/VIX/TNX/SP500)")
     makro = macro_agent.calistir()

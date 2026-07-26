@@ -28,20 +28,53 @@ def get_client():
     )
 
 
+def hesap_kontrol() -> dict:
+    """
+    Hesabın işlem yapabilir durumda olup olmadığını ve bakiyesini döndürür.
+
+    Binance Futures TESTNET hesapları periyodik olarak sıfırlanıyor: API
+    anahtarı doğrulanmaya devam ediyor (hata değil, boş yanıt geliyor) ama
+    hesap `canTrade: False` oluyor ve bakiye kalmıyor. Bu durumda bot
+    sinyal üretir, her emir reddedilir. 2026-07-26'da tam olarak bu
+    yaşandı — o yüzden koşu öncesi kontrol ediliyor.
+
+    Dönüş: {"durum": "ok"|"hata", "islem_yapabilir": bool,
+            "bakiye": float, "mesaj": str}
+    """
+    try:
+        client = get_client()
+        senkronize_et(client)
+        hesap = client.futures_account()
+
+        bakiye = 0.0
+        for varlik in client.futures_account_balance():
+            if varlik.get("asset") == "USDT":
+                bakiye = float(varlik.get("balance", 0))
+                break
+
+        return {
+            "durum": "ok",
+            "islem_yapabilir": bool(hesap.get("canTrade")),
+            "bakiye": bakiye,
+            "mesaj": "",
+        }
+    except Exception as e:
+        return {"durum": "hata", "islem_yapabilir": False, "bakiye": -1.0,
+                "mesaj": f"{type(e).__name__}: {e}"}
+
+
 def bakiye_getir() -> float:
     """
     USDT futures bakiyesi. Alınamazsa -1.0 döner (bot durmaz).
     Günlük özet bildiriminde gerçek K/Z'yi hesaplamak için kullanılıyor.
     """
-    try:
-        client = get_client()
-        senkronize_et(client)
-        for varlik in client.futures_account_balance():
-            if varlik.get("asset") == "USDT":
-                return float(varlik.get("balance", 0))
-    except Exception as e:
-        print(f"  [BAKİYE] ⚠️  Alınamadı ({type(e).__name__}): {e}")
-    return -1.0
+    sonuc = hesap_kontrol()
+    if sonuc["durum"] != "ok":
+        print(f"  [BAKİYE] ⚠️  Alınamadı — {sonuc['mesaj']}")
+        return -1.0
+    if not sonuc["islem_yapabilir"]:
+        print("  [BAKİYE] ⚠️  Hesap işlem yapamaz durumda (canTrade=False)")
+    return sonuc["bakiye"]
 
 
 def calistir(karar: Karar, fiyat: float, kaldirac: int) -> EmirSonucu:
