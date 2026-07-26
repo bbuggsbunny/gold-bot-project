@@ -1,6 +1,6 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 20 Mayıs 2026 (rev 3 — decision_agent düzeltmeleri + ML model geliştirme başladı)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 4 — git sürüm kontrolü kuruldu)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
 > **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
 
@@ -136,6 +136,7 @@ UZUN VADELİ DÖNGÜ (uzun_vadeli_dongu, 4 saatte bir):
 ├── main.py                     # Ana döngü — 2 katman + 3 bağlam ajan
 ├── config.py                   # Tüm sabitler, API anahtarları (env'den)
 ├── .env                        # Gizli anahtarlar (git'e eklenmez)
+├── .gitignore                  # ★ Takip dışı: .env, veri/, features.csv, *.pkl, *.png
 ├── PROJE.md                    # Bu dosya
 │
 ├── agents/
@@ -1278,6 +1279,34 @@ python3 -u main.py 2>&1 | tee bot.log
 tail -f bot.log
 ```
 
+### Git sürüm kontrolü (2026-07-26'dan itibaren)
+
+Depo `~/gold-bot-project` içinde yerel olarak tutuluyor, dal adı `main`. Uzak sunucu (GitHub vb.) **yok** — her şey bu makinede.
+
+```bash
+# Son commit'ten beri ne değişti
+git diff
+
+# Değişiklikleri kaydet (strateji denemelerinde her testten sonra)
+git add -A && git commit -m "motor.py: ADX esigi %1 -> %0.5"
+
+# Bozulan dosyayı son kayıtlı haline döndür
+git checkout -- backtest/motor.py
+
+# Geçmişi gör
+git log --oneline
+```
+
+**Takip edilenler:** `main.py`, `config.py`, `agents/*.py`, `backtest/*.py`, ML scriptleri, `PROJE.md`, `sonuclar/*.csv` → toplam ~516 KB.
+
+**Takip dışı (`.gitignore`):** `.env`, `backtest/veri/` (671 MB), `ml_veri/features.csv` (82 MB), `*.pkl`, `*.png`, `__pycache__/`, `haber_gecmis.json`.
+
+> **Dikkat:** `.gitignore`'da satır sonu yorumu çalışmaz — `backtest/veri/  # 671 MB` yazarsan yorum desenin parçası sayılır ve klasör dışlanmaz. Yorumları ayrı satıra yaz.
+
+**Önemli:** `.env` asla commit edilmemeli. Yeni bir gizli dosya eklersen önce `.gitignore`'a yaz, sonra `git add` çalıştır.
+
+---
+
 ### Testnet'ten gerçek paraya geçiş adımları
 
 1. `.env` dosyasında `TESTNET=False` yap
@@ -1319,6 +1348,8 @@ tail -f bot.log
 | 2026-05-20 | `decision_agent.py` — güven=0 bug'ı düzeltildi | Breakout AL + hafif BEARISH makro + BEARISH haber → guven zorla 0 oluyordu | `makro_mesaj` eşiği ±3/±8 tutarlı hale getirildi; zayıf çelişki artık BEKLE zorlamıyor; debug `[decision_agent]` logları eklendi |
 | 2026-05-20 | `backtest/ml_veri/ozellik_olustur.py` oluşturuldu | 17 yıllık veriyle ML feature engineering | 5.88M 1dk mum → 396.254 adet 15dk özellik satırı; RSI/MACD/BB/ADX/MA oran/volatilite/ATR + 3 yeni özellik (yön_3, momentum_5, rsi_hiz) + saat/gün; 7 saniye |
 | 2026-05-20 | `backtest/ml_veri/model_egit.py` oluşturuldu | Claude'a bağımlılık azaltma — ilk ML modeli | XGBoost 300 ağaç; 2009-2022 eğitim / 2023-2025 test; balanced×3x BEKLE ağırlığı; prob eşiği=0.40; en önemli özellik: saat (101.3), atr (73.9) |
+| 2026-07-26 | Git sürüm kontrolü kuruldu (`git init -b main`) | Strateji denemeleri (Motor v4 ADX %3 → %1 gibi) arasında geri dönüş/karşılaştırma yoktu; eski kod sürümleri kayboluyordu | Yerel depo, uzak sunucu yok. İlk commit: 28 dosya / 9.598 satır / 516 KB. Git kimliği: Berk \<berkereny@gmail.com\> (global) |
+| 2026-07-26 | `.gitignore` oluşturuldu | 757 MB'lık klasörden sadece kodun takip edilmesi ve `.env` sızıntısının engellenmesi | `.env`, `backtest/veri/` (671 MB), `features.csv` (82 MB), `*.pkl`, `*.png`, `__pycache__`, `haber_gecmis.json` takip dışı. Commit öncesi kodda gömülü API anahtarı taraması yapıldı — temiz |
 
 ---
 
