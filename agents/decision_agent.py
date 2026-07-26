@@ -77,6 +77,17 @@ def calistir(
         else:
             makro_mesaj = "Makro güçlü BEARISH (DXY güçlü, risk iştahı yüksek)"
 
+        # Destek/direnç veri ajanından gelir (teknik_analiz'de yok):
+        # kısa modda breakout seviyeleri, uzun modda Bollinger bantları.
+        if "destek" in teknik and "direnc" in teknik:
+            seviyeler = (f"\n- Destek: {teknik['destek']} USD"
+                         f"\n- Direnç: {teknik['direnc']} USD")
+        elif "bb_alt" in teknik and "bb_ust" in teknik:
+            seviyeler = (f"\n- BB Alt: {teknik['bb_alt']} USD"
+                         f"\n- BB Üst: {teknik['bb_ust']} USD")
+        else:
+            seviyeler = ""
+
         takvim_ozet = ""
         if takvim_mod == "DIKKATLI":
             yaklasan = takvim.get("yaklasan_olaylar", []) if takvim else []
@@ -100,9 +111,7 @@ HABER ANALİSTİ RAPORU:
 - Özet: {haberler['ozet']}
 
 TEKNİK ANALİST RAPORU:
-- Sinyal: {teknik_analiz['sinyal']}
-- Destek: {teknik_analiz['destek']} USD
-- Direnç: {teknik_analiz['direnc']} USD
+- Sinyal: {teknik_analiz['sinyal']}{seviyeler}
 - Yorum: {teknik_analiz['yorum']}
 
 RİSK YÖNETİCİSİ RAPORU:
@@ -188,18 +197,23 @@ if __name__ == "__main__":
     import json as _json
 
     # ── Ortak test verileri ──────────────────────────────────────────
-    test_teknik_breakout = {
-        "fiyat": 3350.00, "degisim_pct": 0.42,
-        "rsi": 62.0, "rsi_yorum": "NOTR",
-        "macd": 1.85, "macd_sinyal": 0.90, "macd_hist": 0.95,
-        "ma20": 3340.0, "ma50": 3320.0, "trend": "YUKARI",
+    # DİKKAT: Aşağıdaki sözlükler ilgili ajanın DÖNDÜRDÜĞÜ anahtarlarla
+    # birebir aynı olmalı. Buraya canlıda olmayan bir anahtar eklenirse
+    # test geçer ama canlı akış KeyError ile çöker (2026-07-26'da olan buydu).
+    test_teknik_breakout = {   # data_agent.kisa_vadeli_veri() çıktısı
+        "durum": "ok", "mod": "kisa", "fiyat": 3350.00, "degisim_pct": 0.42,
+        "yuksek": 3352.0, "dusuk": 3344.0,
+        "direnc": 3348.0, "destek": 3320.0, "atr": 6.5,
+        "hacim": 1200.0, "hacim_ort": 900.0, "hacim_teyit": True,
+        "breakout": "YUKARI",
         "son_5_kapanis": [3330.0, 3335.0, 3341.0, 3346.0, 3350.0],
     }
-    test_teknik_sat = {
-        "fiyat": 4536.26, "degisim_pct": -0.038,
+    test_teknik_sat = {        # data_agent.uzun_vadeli_veri() çıktısı
+        "durum": "ok", "mod": "uzun", "fiyat": 4536.26, "degisim_pct": -0.038,
         "rsi": 40.71, "rsi_yorum": "NOTR",
         "macd": -0.2354, "macd_sinyal": 0.3983, "macd_hist": -0.6337,
-        "ma20": 4539.76, "ma50": 4537.70, "trend": "YUKARI",
+        "ma20": 4539.76, "ma50": 4537.70,
+        "bb_ust": 4545.0, "bb_alt": 4528.0, "atr": 4.2, "trend": "YUKARI",
         "son_5_kapanis": [4536.36, 4537.01, 4537.97, 4538.0, 4536.26],
     }
     test_haberler_bearish = {
@@ -207,12 +221,14 @@ if __name__ == "__main__":
         "ozet": "Fed faiz artırımı beklentisi altını baskılıyor.",
         "etkenler": ["Fed faiz artışı", "güçlü dolar"],
     }
-    test_analiz_guclu_al = {
-        "sinyal": "GUCLU_AL", "destek": 3340.0, "direnc": 3370.0,
+    test_analiz_guclu_al = {   # technical_agent.calistir() çıktısı
+        "durum": "ok", "mod": "kisa", "sinyal": "GUCLU_AL",
+        "sl": 3343.5, "tp": 3369.5,
         "yorum": "Güçlü momentum, direnci kırdı, breakout onaylandı.",
     }
-    test_analiz_zayif_sat = {
-        "sinyal": "ZAYIF_SAT", "destek": 4534.0, "direnc": 4540.0,
+    test_analiz_zayif_sat = {  # technical_agent.calistir() çıktısı
+        "durum": "ok", "mod": "uzun", "sinyal": "ZAYIF_SAT",
+        "sl": 4540.0, "tp": 4515.0,
         "yorum": "MACD negatif, kısa vadeli baskı var.",
     }
     test_risk_evet = {
