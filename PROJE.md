@@ -1,6 +1,6 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 26 Temmuz 2026 (rev 6 — mimari yeniden yapılandırma)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 7 — canlı ön kontrol + iki kritik düzeltme)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
 > **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
 
@@ -1273,6 +1273,17 @@ python3 backtest/motor.py
 python3 backtest/strateji_breakout.py
 ```
 
+### Canlı ön kontrol — gerçek API'ler, emir yok ★
+
+```bash
+python3 testler/canli_kontrol.py
+python3 testler/canli_kontrol.py --habersiz   # RSS/FinBERT'i atla (hızlı)
+```
+
+Duman testi her şeyi sahteler; bu betik tam tersini yapar — Binance, Claude, yfinance, investing.com ve FinBERT'e **gerçekten** gider, ama `order_agent`'a dokunmaz (dokunulursa betik hata verip durur). Maliyeti 2-3 Claude çağrısı (~$0.003), açtığı pozisyon sıfır.
+
+Son bölümde Claude'un **ham yanıtları** basılır — ayrıştırmanın gerçek yanıtlarda çalıştığını gözle doğrulamak için. Model değiştirince veya prompt'a dokununca önce bunu çalıştır.
+
 ### Duman testi — her değişiklikten sonra çalıştır ★
 
 ```bash
@@ -1382,6 +1393,9 @@ git log --oneline
 | 2026-07-26 | Ajan hataları artık loglanıyor | `decision`/`technical`/`risk` ajanlarının `except` blokları hatayı yazmadan güvenli varsayılana dönüyordu (BEKLE / NOTR / ONAY:HAYIR) — bu yüzden kritik hata "bugün sinyal yok" gibi görünüyordu | Üç ajan da hata tipi + mesajı basıyor. `decision_agent`'taki tam prompt dökümü kaldırıldı. Commit `0f7e7a9` |
 | 2026-07-26 | `risk_agent` prompt'unda yanlış config değişkeni | `MAX GÜNLÜK ZARAR: ${MAX_STOP_LOSS_PCT}` yazıyordu → Claude'a limit "$1.0" gidiyordu ($75 yerine) | `MAX_GUNLUK_ZARAR` kullanılıyor, SL limiti ayrı satırda. Commit `18d98bc` |
 | 2026-07-26 | Katman kaldıracı gerçekten uygulanır oldu | `order_agent` her emirde `config.LEVERAGE=5` kullanıyordu; `KALDIRAC_KISA=10`/`KALDIRAC_UZUN=3` sadece risk ajanının prompt metnindeydi. Risk ajanı 10x'e göre değerlendirip emir 5x gidiyordu | `order_agent.calistir()` kaldıracı parametre alıyor; `LEVERAGE` sabiti kaldırıldı. **Davranış değişti:** kısa 10x, uzun 3x. Commit `7d500cf` |
+| 2026-07-26 | **`testler/canli_kontrol.py` eklendi ★** | Her şey sahte nesnelerle doğrulanmıştı; gerçek API'lerle hiç denenmemişti | Gerçek Binance/Claude/yfinance/investing.com'a gider, emir göndermez. İlk çalıştırmada aşağıdaki iki kritik hatayı ortaya çıkardı |
+| 2026-07-26 | **`max_tokens` bütçesi büyütüldü ★ KRİTİK** | `claude-sonnet-5` varsayılan olarak `thinking` bloğu üretiyor ve bu token'lar `max_tokens`'a sayılıyor. 150 token'lık bütçede metin bloğu hiç üretilmiyordu → `technical_agent` **boş yanıt** alıyor, `risk_agent`'ın yanıtı ortadan kesiliyordu | technical/risk 150→1000, decision 200→1500, haber 200→1000, web arama 600→2000. Model değişikliğinin yan etkisiydi; canlı kontrolde yakalandı |
+| 2026-07-26 | **makro NaN → GUCLU_BEARISH hatası düzeltildi ★ KRİTİK** | yfinance `^GSPC` için NaN kapanış döndürdü. NaN skora karışınca `_yorumla()` tüm karşılaştırmalardan düşüp **GUCLU_BEARISH** veriyordu — yani veri eksikliği sessizce güçlü satış sinyaline dönüşüyordu | Sembol bazlı hata yakalama: eksik bileşen 0 puan katkı verir, `detay["eksik"]` içinde raporlanır, diğer üçünün sinyali korunur. İki savunma hattı (`_veri_cek` + skor döngüsü) ve `_yorumla` NaN koruması |
 | 2026-07-26 | **Duman testi eklendi (`testler/duman_testi.py`) ★** | Otomatik test yoktu; ajanların kendi test blokları uydurma sözlükler kullandığı için koruma sağlamıyordu | Ağsız/ücretsiz uçtan uca test, 47 kontrol. Hiçbir ara sözlük elle yazılmıyor — her ajan bir öncekinin gerçek çıktısıyla besleniyor. 26 Temmuz hatası geri konulduğunda test 29/37'ye düşüp çıkış kodu 1 veriyor. Commit `9758dec` |
 | 2026-07-26 | **`tipler.py` — ajanlar arası veri sözleşmeleri (dataclass) ★** | Ajanlar serbest `dict` döndürüyordu; hangi anahtarın var olduğu hiçbir yerde yazılı değildi. Kritik hatanın kök nedeni buydu | Olmayan alan artık `AttributeError` veriyor (yutulabilen `KeyError` değil). `KisaVeri`, `UzunVeri`, `TeknikAnaliz`, `RiskRaporu`, `Karar`, `EmirSonucu`, `HaberRaporu`, `MakroRaporu`, `TakvimRaporu`, `Olay`. Commit `1db2a79`, `ee7412c` |
 | 2026-07-26 | `claude_istemci.py` — tek Claude istemcisi | İstemci 6 ayrı yerde kuruluyor, `"ANAHTAR: değer"` ayrıştırma her ajanda kopyalanıyordu (~80 satır tekrar) | Tek istemci + ortak `alanlari_ayristir()` / `json_ayristir()`. **Model `claude-sonnet-4-6` → `claude-sonnet-5`;** kimlikler `config.MODEL_ANALIZ` / `MODEL_HABER`'e taşındı. Commit `295550c` |
