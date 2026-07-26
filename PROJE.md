@@ -1,6 +1,6 @@
 # ALTIN TRADİNG BOTU — TAM PROJE DOKÜMANTASYONU
 
-> **Son güncelleme:** 26 Temmuz 2026 (rev 7 — canlı ön kontrol + iki kritik düzeltme)  
+> **Son güncelleme:** 26 Temmuz 2026 (rev 8 — haftalık testnet koşusuna hazırlık)  
 > **Platform:** Fedora Linux | Python 3.14.4 (gold-bot venv) + Python 3.12.13 (finbert-env)  
 > **Durum:** Testnet aktif — ML modeli geliştirme aşamasında
 
@@ -144,7 +144,12 @@ UZUN VADELİ DÖNGÜ (uzun_vadeli_dongu, 4 saatte bir):
 │
 ├── bot/                        # ★ İş mantığı (eskiden main.py'nin içindeydi)
 │   ├── durum.py                #   BaglamDurumu + ZararTakibi
+│   ├── kayit.py                # ★ Kalıcı karar/işlem kaydı
 │   └── dongu.py                #   Katman tanımları, analiz_hatti(), zamanlayici()
+│
+├── kayitlar/                   # ★ Çalışma zamanı verisi (git'e girmez)
+│   ├── kararlar.csv            #   Her analiz döngüsü bir satır
+│   └── gunluk_durum.json       #   Gün sonu bakiyesi (K/Z hesabı için)
 │
 ├── testler/                    # ★ Otomatik test
 │   └── duman_testi.py          #   Ağsız/ücretsiz uçtan uca doğrulama (47 kontrol)
@@ -1393,6 +1398,9 @@ git log --oneline
 | 2026-07-26 | Ajan hataları artık loglanıyor | `decision`/`technical`/`risk` ajanlarının `except` blokları hatayı yazmadan güvenli varsayılana dönüyordu (BEKLE / NOTR / ONAY:HAYIR) — bu yüzden kritik hata "bugün sinyal yok" gibi görünüyordu | Üç ajan da hata tipi + mesajı basıyor. `decision_agent`'taki tam prompt dökümü kaldırıldı. Commit `0f7e7a9` |
 | 2026-07-26 | `risk_agent` prompt'unda yanlış config değişkeni | `MAX GÜNLÜK ZARAR: ${MAX_STOP_LOSS_PCT}` yazıyordu → Claude'a limit "$1.0" gidiyordu ($75 yerine) | `MAX_GUNLUK_ZARAR` kullanılıyor, SL limiti ayrı satırda. Commit `18d98bc` |
 | 2026-07-26 | Katman kaldıracı gerçekten uygulanır oldu | `order_agent` her emirde `config.LEVERAGE=5` kullanıyordu; `KALDIRAC_KISA=10`/`KALDIRAC_UZUN=3` sadece risk ajanının prompt metnindeydi. Risk ajanı 10x'e göre değerlendirip emir 5x gidiyordu | `order_agent.calistir()` kaldıracı parametre alıyor; `LEVERAGE` sabiti kaldırıldı. **Davranış değişti:** kısa 10x, uzun 3x. Commit `7d500cf` |
+| 2026-07-26 | **Kalıcı karar kaydı (`bot/kayit.py`)** | Her şey stdout'a gidiyordu; bir haftalık koşunun sonunda elde analiz edilebilir veri kalmazdı | `kayitlar/kararlar.csv` — her döngü bir satır, `asama` sütunu döngünün nereye kadar gittiğini söyler. Sorun 6/7 kararı için gereken veri de bu |
+| 2026-07-26 | **Günlük özet bildirimi devreye alındı** | `bildir_ozet()` yazılmıştı ama hiç çağrılmıyordu | Gün devrinde Telegram'a özet: gerçek bakiye K/Z'si (`order_agent.bakiye_getir()`), döngü/karar/emir sayıları, ortalama güven |
+| 2026-07-26 | **`sudo chronyc` artık koşuyu kilitleyemez** | Şifresiz sudo kuralı yoksa sudo terminalden şifre ister, gözetimsiz bot orada takılırdı (Sorun 4) | `sudo -n` + 10s timeout; başarısızsa uyarı basıp devam. Kalıcı çözüm için sudoers kuralı `agents/utils.py` başlığında |
 | 2026-07-26 | **`testler/canli_kontrol.py` eklendi ★** | Her şey sahte nesnelerle doğrulanmıştı; gerçek API'lerle hiç denenmemişti | Gerçek Binance/Claude/yfinance/investing.com'a gider, emir göndermez. İlk çalıştırmada aşağıdaki iki kritik hatayı ortaya çıkardı |
 | 2026-07-26 | **`max_tokens` bütçesi büyütüldü ★ KRİTİK** | `claude-sonnet-5` varsayılan olarak `thinking` bloğu üretiyor ve bu token'lar `max_tokens`'a sayılıyor. 150 token'lık bütçede metin bloğu hiç üretilmiyordu → `technical_agent` **boş yanıt** alıyor, `risk_agent`'ın yanıtı ortadan kesiliyordu | technical/risk 150→1000, decision 200→1500, haber 200→1000, web arama 600→2000. Model değişikliğinin yan etkisiydi; canlı kontrolde yakalandı |
 | 2026-07-26 | **makro NaN → GUCLU_BEARISH hatası düzeltildi ★ KRİTİK** | yfinance `^GSPC` için NaN kapanış döndürdü. NaN skora karışınca `_yorumla()` tüm karşılaştırmalardan düşüp **GUCLU_BEARISH** veriyordu — yani veri eksikliği sessizce güçlü satış sinyaline dönüşüyordu | Sembol bazlı hata yakalama: eksik bileşen 0 puan katkı verir, `detay["eksik"]` içinde raporlanır, diğer üçünün sinyali korunur. İki savunma hattı (`_veri_cek` + skor döngüsü) ve `_yorumla` NaN koruması |
@@ -1452,13 +1460,26 @@ git log --oneline
 
 ---
 
-### Sorun 4: sudo chronyc headless sistemde çalışmayabilir
+### ~~Sorun 4: sudo chronyc headless sistemde çalışmayabilir~~ — **KISMEN ÇÖZÜLDÜ** (2026-07-26)
+
+**Kod tarafı halledildi:** `sudo -n` + timeout ile bot artık takılmıyor, uyarı basıp devam ediyor. Saat sapması sürerse Binance imza hatası verebilir ama bot çalışmaya devam eder.
+
+**Kalan (senin yapman gereken):** kalıcı düzeltme için şifresiz sudo kuralı —
+
+```bash
+echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/chronyc makestep" | sudo tee /etc/sudoers.d/chronyc
+sudo chmod 440 /etc/sudoers.d/chronyc
+```
+
+<details><summary>Orijinal kayıt</summary>
 
 **Tanım:** `senkronize_et()` > 1000ms sapma durumunda `sudo chronyc makestep` çalıştırıyor ama sudo şifre istiyor.
 
 **Kök neden:** Headless (şifresiz sudo) konfigüre edilmemiş.
 
 **Önerilen çözüm:** `/etc/sudoers.d/chronyc` dosyasına `Berk ALL=(ALL) NOPASSWD: /usr/bin/chronyc makestep` ekle.
+
+</details>
 
 ---
 
