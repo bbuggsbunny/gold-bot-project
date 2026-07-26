@@ -123,7 +123,7 @@ take_profit_pct: max {config.MAX_TAKE_PROFIT_PCT}"""
             prompt,
             sistem=("Sen tüm uzmanları dinleyen baş tradersin. Uzlaşı ararsın. "
                     "Risk yöneticisine saygı duyarsın."),
-            max_tokens=200,
+            max_tokens=1500,
         )
         ham_karar = claude_istemci.json_ayristir(ham)
 

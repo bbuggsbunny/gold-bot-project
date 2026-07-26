@@ -58,7 +58,7 @@ YORUM: tek cumle turkce
         ham = claude_istemci.sor(
             prompt,
             sistem="Sen teknik analistsin. Sadece sayı ve sinyal üretirsin.",
-            max_tokens=150,
+            max_tokens=1000,
         )
         alanlar = claude_istemci.alanlari_ayristir(ham, {
             "SINYAL":    str,

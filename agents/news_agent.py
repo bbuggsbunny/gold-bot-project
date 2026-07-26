@@ -111,7 +111,7 @@ def _claude_analiz(baslik: str, ozet_metin: str) -> dict:
         f"Haber başlığı: {baslik}\nÖzet: {ozet_metin}",
         sistem=sistem,
         model=config.MODEL_HABER,
-        max_tokens=200,
+        max_tokens=1000,
     )
     alanlar = claude_istemci.alanlari_ayristir(ham, {
         "SENTIMENT": str,
@@ -260,7 +260,7 @@ def calistir() -> HaberRaporu:
                 "SENTIMENT: BULLISH\n"
                 "OZET: buraya 2 cumle turkce ozet"
             ),
-            max_tokens=600,
+            max_tokens=2000,
             araclar=[{"type": "web_search_20250305", "name": "web_search"}],
         )
         alanlar = claude_istemci.alanlari_ayristir(ham, {

@@ -31,12 +31,22 @@ def istemci() -> anthropic.Anthropic:
 
 
 def sor(prompt: str, sistem: str, model: str | None = None,
-        max_tokens: int = 200, araclar: list | None = None) -> str:
+        max_tokens: int = 1000, araclar: list | None = None) -> str:
     """
     Claude'a tek mesajlık soru sorar ve yanıtın düz metnini döndürür.
 
-    Yanıttaki tüm metin blokları birleştirilir; web arama gibi araçlar
-    kullanıldığında yanıt birden fazla bloktan gelebiliyor.
+    Yanıttaki tüm metin blokları birleştirilir; yanıt birden fazla bloktan
+    gelebiliyor (thinking + text, web arama sonuçları vb.).
+
+    MAX_TOKENS UYARISI (2026-07-26'da öğrenildi)
+        claude-sonnet-5 varsayılan olarak bir `thinking` bloğu üretir ve bu
+        token'lar max_tokens bütçesinden düşer. Bütçe darsa metin bloğu
+        kesilir veya hiç üretilmez — `sor()` boş string döner, ajan da
+        sessizce varsayılanına düşer.
+
+        Canlı ön kontrolde tam olarak bu yaşandı: max_tokens=150 ile
+        technical_agent boş yanıt aldı, risk_agent'ın yanıtı ortadan
+        kesildi. Bütçeyi düşünme payını da kapsayacak kadar geniş tut.
     """
     parametreler = {
         "model": model or config.MODEL_ANALIZ,

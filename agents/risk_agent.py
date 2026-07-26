@@ -55,7 +55,7 @@ UYARI: tek cumle turkce
         ham = claude_istemci.sor(
             prompt,
             sistem="Sen muhafazakar risk yöneticisisin. Sermayeyi korumak önce gelir.",
-            max_tokens=150,
+            max_tokens=1000,
         )
         alanlar = claude_istemci.alanlari_ayristir(ham, {
             "RISK":         str,
