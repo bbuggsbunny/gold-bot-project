@@ -1,0 +1,18 @@
+# Ana ortam (Python 3.14 — gold-bot venv)
+anthropic
+python-binance
+python-dotenv
+requests
+pandas
+numpy
+matplotlib
+yfinance
+feedparser
+beautifulsoup4
+scikit-learn
+xgboost
+
+# NOT: FinBERT ayrı bir ortamda çalışıyor (finbert-env, Python 3.12)
+# çünkü transformers/torch henüz Python 3.14'ü desteklemiyor:
+#   python3.12 -m venv finbert-env
+#   finbert-env/bin/pip install transformers torch
